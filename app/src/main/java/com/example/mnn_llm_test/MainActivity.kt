@@ -1,18 +1,24 @@
 package com.example.mnn_llm_test
 
 import android.content.Context
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.tooling.preview.Preview
@@ -20,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.media3.common.util.Log
 import androidx.media3.common.util.UnstableApi
+import coil.compose.rememberAsyncImagePainter
 import com.example.mnn_llm_test.MnnLlmJni.submitNative
 import com.example.mnn_llm_test.ui.theme.MnnllmtestTheme
 import kotlinx.coroutines.*
@@ -137,16 +144,17 @@ fun ChatUI(
     var inputText by remember { mutableStateOf("") }
     var responseText by remember { mutableStateOf("") }
     var isGenerating by remember { mutableStateOf(false) }
+    var imageUri by remember { mutableStateOf<Uri?>(null) }
+    var isImageEnabled by remember { mutableStateOf(false) } // Toggle switch state
     val responseBuilder = remember { StringBuilder() }
 
     // Define the ProgressListener to handle streamed responses
     val progressListener = remember {
         object : MnnLlmJni.ProgressListener {
             override fun onProgress(progress: String): Boolean {
-                // Update responseText with each progress update on the main thread
                 coroutineScope.launch(Dispatchers.Main) {
                     responseBuilder.append(progress)
-                    responseText = responseBuilder.toString() // Update UI with progress
+                    responseText = responseBuilder.toString()
                 }
                 return !isGenerating
             }
@@ -156,14 +164,20 @@ fun ChatUI(
     val sendToModel = {
         chatSession?.let { session ->
             coroutineScope.launch {
+                val formattedPrompt = if (isImageEnabled && imageUri != null) {
+                    String.format("<img>%s</img>%s", imageUri.toString(), inputText)
+                } else {
+                    inputText
+                }
+
                 withContext(Dispatchers.Main) {
                     isGenerating = true
                     responseBuilder.clear()
-                    responseText = "" // Clear previous response text
+                    responseText = ""
                 }
                 try {
-                    // Generate the response without expecting a final result
-                    session.generate(inputText, progressListener)
+                    Log.d("FINAL_PROMPT", formattedPrompt)
+                    session.generate(formattedPrompt, progressListener)
                     inputText = ""
                 } catch (e: Exception) {
                     Log.e("ChatUI", "Error generating response", e)
@@ -184,23 +198,32 @@ fun ChatUI(
             .fillMaxSize()
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Input field for user prompt
+        // Toggle switch to enable/disable image in prompt
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = "Include Image", color = Color.White)
+            Spacer(modifier = Modifier.width(8.dp))
+            Switch(checked = isImageEnabled, onCheckedChange = { isImageEnabled = it })
+        }
+
+        // Input field for user text
         BasicTextField(
             value = inputText,
             onValueChange = { inputText = it },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
                 .border(1.dp, Color.Gray)
                 .padding(16.dp),
             textStyle = TextStyle(color = Color.White)
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        // Image picker with callback to update imageUri
+        ImagePicker(isImageEnabled) {  selectedUri ->
+            imageUri = selectedUri
+        }
 
-        // Send button to trigger model response generation
+        // Send button
         Button(
             onClick = { sendToModel() },
             enabled = !isGenerating
@@ -208,12 +231,37 @@ fun ChatUI(
             Text(text = if (isGenerating) "Generating..." else "Send")
         }
 
+        // Response text
+        Text(text = responseText, color = Color.White)
+    }
+}
+
+@Composable
+fun ImagePicker(isImageEnabled:Boolean ,onImagePicked: (Uri) -> Unit) {
+    var imageUri by remember { mutableStateOf<Uri?>(null) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let {
+            imageUri = it
+            onImagePicked(it) // Pass the selected image URI to the parent function
+        }
+    }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        imageUri?.let {
+            Image(
+                painter = rememberAsyncImagePainter(it),
+                contentDescription = "Selected Image",
+                modifier = Modifier
+                    .size(200.dp)
+                    .clip(CircleShape)
+            )
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Show the progressively generated response text
-        Text(
-            text = responseText,
-            color = Color.White
-        )
+        Button(enabled = isImageEnabled,onClick = { launcher.launch("image/*") }) {
+            Text(text = "Pick Image")
+
+        }
     }
 }
