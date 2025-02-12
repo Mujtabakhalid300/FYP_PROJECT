@@ -3,6 +3,7 @@ package com.example.mnn_llm_test
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
+import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -20,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -38,10 +40,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+
+
         MnnLlmJni // Initialize JNI if needed
         enableEdgeToEdge() // Optional full-screen support
 
         setContent {
+
+            val context = LocalContext.current
             MnnllmtestTheme {
                 var isLoading by remember { mutableStateOf(true) }
                 var progressText by remember { mutableStateOf("Loading Model...") }
@@ -70,14 +76,14 @@ class MainActivity : ComponentActivity() {
                 // Load model in the background
                 LaunchedEffect(Unit) {
                     withContext(Dispatchers.IO) {
-                        val modelDir = filesDir.absolutePath + "/models/Qwen2.5-0.5B-Instruct-MNN/"
+                        val modelDir = filesDir.absolutePath + "/models/Qwen2-VL-2B-Instruct-MNN/"
                         val modelDirFile = File(modelDir)
 
                         // Ensure directory exists
                         if (!modelDirFile.exists()) modelDirFile.mkdirs()
 
                         Log.d("ModelLoading", "Copying model files from assets to internal storage...")
-                        copyAssetFolderToInternalStorage(applicationContext, "models/Qwen2.5-0.5B-Instruct-MNN", modelDir)
+                        copyAssetFolderToInternalStorage(applicationContext, "models/Qwen2-VL-2B-Instruct-MNN", modelDir)
 //                        val copiedFiles = File(modelDir).listFiles()
 //                        copiedFiles?.forEach { file ->
 //                            Log.d("ModelCopy", "Copied file: ${file.name}, Path: ${file.absolutePath}")
@@ -92,7 +98,7 @@ class MainActivity : ComponentActivity() {
                         val modelConfigPath = File(modelDir, "config.json").absolutePath
                         Log.d("ModelLoading", "Model config file: $modelConfigPath")
                         Log.d("PRINTING SIZES", "------------------------------")
-                        printAssetFileSizes(applicationContext,"models/Qwen2.5-0.5B-Instruct-MNN")
+                        printAssetFileSizes(applicationContext,"models/Qwen2-VL-2B-Instruct-MNN")
                         Log.d("PRINTING SIZES", "------------------------------")
                         try {
                             Log.d("ModelLoading", "Initializing the model...")
@@ -123,10 +129,11 @@ class MainActivity : ComponentActivity() {
 
                 // Main UI content after model loading
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    ChatUI(
+                    ChatUI(context,
                         modifier = Modifier.padding(innerPadding),
                         chatSession = chatSession,
-                        coroutineScope = coroutineScope
+                        coroutineScope = coroutineScope,
+
                     )
                 }
             }
@@ -136,7 +143,7 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(UnstableApi::class)
 @Composable
-fun ChatUI(
+fun ChatUI(context: Context,
     modifier: Modifier = Modifier,
     chatSession: MnnLlmJni.ChatSession?,
     coroutineScope: CoroutineScope
@@ -219,7 +226,7 @@ fun ChatUI(
         )
 
         // Image picker with callback to update imageUri
-        ImagePicker(isImageEnabled) {  selectedUri ->
+        ImagePicker(context,isImageEnabled) { selectedUri ->
             imageUri = selectedUri
         }
 
@@ -236,13 +243,22 @@ fun ChatUI(
     }
 }
 
+@OptIn(UnstableApi::class)
 @Composable
-fun ImagePicker(isImageEnabled:Boolean ,onImagePicked: (Uri) -> Unit) {
+fun ImagePicker(currentContext: Context,isImageEnabled: Boolean, onImagePicked: (Uri) -> Unit) {
     var imageUri by remember { mutableStateOf<Uri?>(null) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
             imageUri = it
-            onImagePicked(it) // Pass the selected image URI to the parent function
+            // Ensure you get the context inside the composable
+            val context = currentContext
+            val filePath = getFilePathFromUri(context, uri)  // Resolve URI to actual file path
+            if (filePath != null) {
+                Log.d("ImagePicker", "Selected image file path: $filePath")
+                onImagePicked(Uri.parse(filePath)) // Pass the resolved URI back
+            } else {
+                Log.e("ImagePicker", "Failed to resolve file path from URI")
+            }
         }
     }
 
@@ -259,9 +275,31 @@ fun ImagePicker(isImageEnabled:Boolean ,onImagePicked: (Uri) -> Unit) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Button(enabled = isImageEnabled,onClick = { launcher.launch("image/*") }) {
+        // Button to pick an image, only enabled when the toggle is on
+        Button(enabled = isImageEnabled, onClick = { launcher.launch("image/*") }) {
             Text(text = "Pick Image")
-
         }
     }
+}
+
+// Function to resolve content URI to file path, now this is independent of composable
+fun getFilePathFromUri(context: Context, uri: Uri): String? {
+    var filePath: String? = null
+
+    if (uri.scheme.equals("content")) {
+        val cursor = context.contentResolver.query(uri, arrayOf(MediaStore.Images.Media.DATA), null, null, null)
+        cursor?.let {
+            if (it.moveToFirst()) {
+                val columnIndex = it.getColumnIndex(MediaStore.Images.Media.DATA)
+                if (columnIndex != -1) {
+                    filePath = it.getString(columnIndex)
+                }
+            }
+            it.close()
+        }
+    } else if (uri.scheme.equals("file")) {
+        filePath = uri.path
+    }
+
+    return filePath
 }
