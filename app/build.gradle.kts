@@ -89,4 +89,7 @@ dependencies {
 
     // Manually ensure Core KTX dependency is included
     implementation("androidx.core:core-ktx:1.13.0")
+
+
+    implementation("io.coil-kt:coil-compose:2.5.0")
 }
