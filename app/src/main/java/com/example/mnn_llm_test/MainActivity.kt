@@ -1,6 +1,8 @@
 package com.example.mnn_llm_test
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
@@ -23,22 +25,34 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.media3.common.util.Log
 import androidx.media3.common.util.UnstableApi
 import coil.compose.rememberAsyncImagePainter
-import com.example.mnn_llm_test.MnnLlmJni.submitNative
 import com.example.mnn_llm_test.ui.theme.MnnllmtestTheme
 import kotlinx.coroutines.*
-
+import org.vosk.Model
+import org.vosk.Recognizer
+import org.vosk.android.RecognitionListener
+import org.vosk.android.SpeechService
 import java.io.File
 
+
 class MainActivity : ComponentActivity() {
+
+
+
+
+
     @OptIn(UnstableApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+
+
 
 
 
@@ -129,21 +143,29 @@ class MainActivity : ComponentActivity() {
 
                 // Main UI content after model loading
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    ChatUI(context,
+                    ChatUI(
+                        context,
                         modifier = Modifier.padding(innerPadding),
                         chatSession = chatSession,
                         coroutineScope = coroutineScope,
 
-                    )
+                        )
                 }
             }
         }
     }
+
+
+
+
+//    -------------------CLASS FUNCTIONS START HERE-----------------------
+
 }
 
 @OptIn(UnstableApi::class)
 @Composable
-fun ChatUI(context: Context,
+fun ChatUI(
+    context: Context,
     modifier: Modifier = Modifier,
     chatSession: MnnLlmJni.ChatSession?,
     coroutineScope: CoroutineScope
@@ -152,10 +174,11 @@ fun ChatUI(context: Context,
     var responseText by remember { mutableStateOf("") }
     var isGenerating by remember { mutableStateOf(false) }
     var imageUri by remember { mutableStateOf<Uri?>(null) }
-    var isImageEnabled by remember { mutableStateOf(false) } // Toggle switch state
+    var isImageEnabled by remember { mutableStateOf(false) }
+    var isRecording by remember { mutableStateOf(false) }
     val responseBuilder = remember { StringBuilder() }
 
-    // Define the ProgressListener to handle streamed responses
+    // Define the ProgressListener
     val progressListener = remember {
         object : MnnLlmJni.ProgressListener {
             override fun onProgress(progress: String): Boolean {
@@ -163,11 +186,46 @@ fun ChatUI(context: Context,
                     responseBuilder.append(progress)
                     responseText = responseBuilder.toString()
                 }
-                return !isGenerating
+                return !isGenerating // Continue streaming
             }
         }
     }
 
+    // Vosk Helper
+    val voskHelper = remember {
+        VoskHelper(
+            context = context,
+            onFinalTranscription = { result ->
+                inputText += result // Append transcribed text to inputText
+            },
+            onError = { error ->
+                responseText = error
+            }
+        )
+    }
+
+    // Request audio permission
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            voskHelper.initModel()
+        } else {
+            responseText = "Audio permission denied"
+        }
+    }
+
+    // Check and request permission on launch
+    LaunchedEffect(Unit) {
+        val permissionCheck = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
+        if (permissionCheck != PackageManager.PERMISSION_GRANTED) {
+            launcher.launch(Manifest.permission.RECORD_AUDIO)
+        } else {
+            voskHelper.initModel()
+        }
+    }
+
+    // Send to model function
     val sendToModel = {
         chatSession?.let { session ->
             coroutineScope.launch {
@@ -183,18 +241,12 @@ fun ChatUI(context: Context,
                     responseText = ""
                 }
                 try {
-                    Log.d("FINAL_PROMPT", formattedPrompt)
-                    session.generate(formattedPrompt, progressListener)
+                    session.generate(formattedPrompt, progressListener) // Use the progressListener here
                     inputText = ""
                 } catch (e: Exception) {
-                    Log.e("ChatUI", "Error generating response", e)
-                    withContext(Dispatchers.Main) {
-                        responseText = "Error: ${e.message}"
-                    }
+                    responseText = "Error: ${e.message}"
                 } finally {
-                    withContext(Dispatchers.Main) {
-                        isGenerating = false
-                    }
+                    isGenerating = false
                 }
             }
         } ?: Log.e("ChatSession", "Model session not initialized yet.")
@@ -207,14 +259,14 @@ fun ChatUI(context: Context,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Toggle switch to enable/disable image in prompt
+        // Toggle switch for image
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(text = "Include Image", color = Color.White)
             Spacer(modifier = Modifier.width(8.dp))
             Switch(checked = isImageEnabled, onCheckedChange = { isImageEnabled = it })
         }
 
-        // Input field for user text
+        // Input field
         BasicTextField(
             value = inputText,
             onValueChange = { inputText = it },
@@ -225,9 +277,24 @@ fun ChatUI(context: Context,
             textStyle = TextStyle(color = Color.White)
         )
 
-        // Image picker with callback to update imageUri
-        ImagePicker(context,isImageEnabled) { selectedUri ->
+        // Image picker
+        ImagePicker(context, isImageEnabled) { selectedUri ->
             imageUri = selectedUri
+        }
+
+        // Record button
+        Button(
+            onClick = {
+                if (isRecording) {
+                    voskHelper.stopRecording()
+                } else {
+                    voskHelper.startRecording()
+                }
+                isRecording = !isRecording
+            },
+            enabled = !isGenerating
+        ) {
+            Text(text = if (isRecording) "Stop Recording" else "Record")
         }
 
         // Send button
@@ -242,7 +309,6 @@ fun ChatUI(context: Context,
         Text(text = responseText, color = Color.White)
     }
 }
-
 @OptIn(UnstableApi::class)
 @Composable
 fun ImagePicker(currentContext: Context,isImageEnabled: Boolean, onImagePicked: (Uri) -> Unit) {
