@@ -58,6 +58,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.DisposableEffect
 
 
 class MainActivity : ComponentActivity() {
@@ -86,6 +88,8 @@ class MainActivity : ComponentActivity() {
                 var progressText by remember { mutableStateOf("Loading Model...") }
                 var chatSession by remember { mutableStateOf<MnnLlmJni.ChatSession?>(null) }
                 val coroutineScope = rememberCoroutineScope()
+                val tts = remember { TTSManager(context) }
+                val isSpeaking by tts.isSpeaking.collectAsStateWithLifecycle()
 
                 // Show a loading dialog while the model loads
                 if (isLoading) {
@@ -167,8 +171,16 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.padding(innerPadding),
                         chatSession = chatSession,
                         coroutineScope = coroutineScope,
+                        tts = tts,
+                        isSpeaking = isSpeaking
+                    )
+                }
 
-                        )
+                // Clean up TTS when the composable is disposed
+                DisposableEffect(Unit) {
+                    onDispose {
+                        tts.shutdown()
+                    }
                 }
             }
         }
@@ -187,7 +199,9 @@ fun ChatUI(
     context: Context,
     modifier: Modifier = Modifier,
     chatSession: MnnLlmJni.ChatSession?,
-    coroutineScope: CoroutineScope
+    coroutineScope: CoroutineScope,
+    tts: TTSManager,
+    isSpeaking: Boolean
 ) {
     var inputText by remember { mutableStateOf("") }
     var responseText by remember { mutableStateOf("") }
@@ -258,10 +272,14 @@ fun ChatUI(
                     isGenerating = true
                     responseBuilder.clear()
                     responseText = ""
+                    tts.stop() // Stop any ongoing speech
                 }
                 try {
                     session.generate(formattedPrompt, progressListener) // Use the progressListener here
                     inputText = ""
+                    withContext(Dispatchers.Main) {
+                        tts.speak(responseText)
+                    }
                 } catch (e: Exception) {
                     responseText = "Error: ${e.message}"
                 } finally {
@@ -322,6 +340,20 @@ fun ChatUI(
             enabled = !isGenerating
         ) {
             Text(text = if (isGenerating) "Generating..." else "Send")
+        }
+
+        // TTS control button
+        Button(
+            onClick = { 
+                if (isSpeaking) {
+                    tts.stop()
+                } else {
+                    tts.speak(responseText)
+                }
+            },
+            enabled = responseText.isNotEmpty()
+        ) {
+            Text(text = if (isSpeaking) "Stop TTS" else "Play TTS")
         }
 
         // Response text

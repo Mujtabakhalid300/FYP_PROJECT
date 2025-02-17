@@ -96,6 +96,8 @@ dependencies {
     implementation ("net.java.dev.jna:jna:5.13.0@aar")
     implementation ("com.alphacephei:vosk-android:0.3.47@aar")
 
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
 }
 
 
