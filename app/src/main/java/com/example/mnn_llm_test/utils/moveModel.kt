@@ -1,4 +1,4 @@
-package com.example.mnn_llm_test
+package com.example.mnn_llm_test.utils
 
 import android.content.Context
 import android.util.Log

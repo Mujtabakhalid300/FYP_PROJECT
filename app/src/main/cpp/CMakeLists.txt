@@ -29,8 +29,8 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
         llm_mnn_jni.cpp
         diffusion_session.cpp)
 
-# Set the root path for MNN
-set(MNN_ROOT "C:/Personal/Python Work/FYP/mnntest/MNN")
+# Set the root path for MNN $
+set(MNN_ROOT $ENV{MNN_ROOT})
 
 # Include the necessary directories for MNN, diffusion, and llm
 include_directories("${MNN_ROOT}/include/")
