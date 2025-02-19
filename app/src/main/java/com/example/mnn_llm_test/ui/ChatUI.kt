@@ -143,24 +143,25 @@ fun ChatUI(
             .padding(16.dp).verticalScroll(scrollState),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp)
+
     ) {
         // Toggle switch for image
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = "Include Image", color = Color.White)
-            Spacer(modifier = Modifier.width(8.dp))
-            Switch(checked = isImageEnabled, onCheckedChange = { isImageEnabled = it })
+//            Text(text = "Include Image", color = Color.White)
+//            Spacer(modifier = Modifier.width(8.dp))
+//            Switch(checked = isImageEnabled, onCheckedChange = { isImageEnabled = it })
         }
 
-        // Input field
-        BasicTextField(
-            value = inputText,
-            onValueChange = { inputText = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(1.dp, Color.Gray)
-                .padding(16.dp),
-            textStyle = TextStyle(color = Color.Black)
-        )
+//        // Input field
+//        BasicTextField(
+//            value = inputText,
+//            onValueChange = { inputText = it },
+//            modifier = Modifier
+//                .fillMaxWidth()
+//                .border(1.dp, Color.Gray)
+//                .padding(16.dp),
+//            textStyle = TextStyle(color = Color.Black)
+//        )
 
         // Image picker
         ImagePicker(context, isImageEnabled) { selectedUri ->
@@ -190,7 +191,8 @@ fun ChatUI(
             Icon(
                 imageVector = Icons.Filled.Mic,
                 contentDescription = "Microphone",
-                tint = Color.White // Adjust color if needed
+                tint = Color.White, // Adjust color if needed,
+                modifier = Modifier.fillMaxSize()
             )
         }
 

@@ -8,12 +8,18 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import coil.compose.rememberAsyncImagePainter
@@ -48,21 +54,30 @@ fun ImagePicker(context: Context, isImageEnabled: Boolean, onImagePicked: (Strin
     }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        imageUri?.let {
-            Image(
-                painter = rememberAsyncImagePainter(it),
-                contentDescription = "Captured Image",
-                modifier = Modifier.size(200.dp).clip(CircleShape)
-            )
-        }
+//        imageUri?.let {
+//            Image(
+//                painter = rememberAsyncImagePainter(it),
+//                contentDescription = "Captured Image",
+//                modifier = Modifier.size(200.dp).clip(CircleShape)
+//            )
+//        }
         Button(
             enabled = isImageEnabled,
             onClick = {
                 Log.d("ImagePicker", "Launching camera with URI: $fileUri")
                 takePictureLauncher.launch(fileUri)
             }
+                    ,shape = CircleShape, // Makes it circular
+            modifier = Modifier.size(200.dp) // Adjust size as needed
+            , colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF7700))
         ) {
-            Text(text = "Take Picture")
+            Icon(
+                imageVector = Icons.Filled.CameraAlt,
+                contentDescription = "Camera",
+                tint = Color.White, // Adjust color if needed
+                modifier = Modifier.fillMaxSize(),
+
+            )
         }
     }
 }
