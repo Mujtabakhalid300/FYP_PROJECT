@@ -1,34 +1,42 @@
 package com.example.mnn_llm_test.ui
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import coil.compose.rememberAsyncImagePainter
 import java.io.File
 
 @Composable
 fun ImagePicker(context: Context, isImageEnabled: Boolean, onImagePicked: (String) -> Unit) {
     var imageUri by remember { mutableStateOf<Uri?>(null) }
     var absolutePath by remember { mutableStateOf<String?>(null) }
+    var cameraPermissionAllowed by remember { mutableStateOf<Boolean>(false) }
 
     // 🔥 Create image file and get its URI + absolute path
     val (fileUri, filePath) = remember {
@@ -52,23 +60,35 @@ fun ImagePicker(context: Context, isImageEnabled: Boolean, onImagePicked: (Strin
             Log.e("ImagePicker", "Failed to capture image")
         }
     }
+    val permissionsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        cameraPermissionAllowed = permissions[Manifest.permission.CAMERA] == true
+    }
+
+// Request permissions inside LaunchedEffect
+    LaunchedEffect(Unit) {
+        val cameraPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+
+        if (cameraPermission != PackageManager.PERMISSION_GRANTED) {
+            permissionsLauncher.launch(arrayOf(Manifest.permission.CAMERA))
+        } else {
+            cameraPermissionAllowed = true
+        }
+    }
+
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-//        imageUri?.let {
-//            Image(
-//                painter = rememberAsyncImagePainter(it),
-//                contentDescription = "Captured Image",
-//                modifier = Modifier.size(200.dp).clip(CircleShape)
-//            )
-//        }
+//
         Button(
-            enabled = isImageEnabled,
+
+            enabled = if (cameraPermissionAllowed) true else false,
             onClick = {
                 Log.d("ImagePicker", "Launching camera with URI: $fileUri")
                 takePictureLauncher.launch(fileUri)
             }
                     ,shape = CircleShape, // Makes it circular
-            modifier = Modifier.size(200.dp) // Adjust size as needed
+            modifier = Modifier.aspectRatio(1f).fillMaxWidth() // Adjust size as needed
             , colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF7700))
         ) {
             Icon(
