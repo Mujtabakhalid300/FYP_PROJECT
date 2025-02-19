@@ -20,9 +20,12 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.media3.common.util.UnstableApi
 import android.Manifest
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.ui.unit.sp
 import com.example.mnn_llm_test.MnnLlmJni
 import com.example.mnn_llm_test.tts.TTSManager
 import com.example.mnn_llm_test.VoskHelper
@@ -45,10 +48,14 @@ fun ChatUI(
     var inputText by remember { mutableStateOf("") }
     var responseText by remember { mutableStateOf("") }
     var isGenerating by remember { mutableStateOf(false) }
-    var imageUri by remember { mutableStateOf<Uri?>(null) }
-    var isImageEnabled by remember { mutableStateOf(false) }
+    var imageUri by remember { mutableStateOf<String>("") }
+    var isImageEnabled by remember { mutableStateOf(true) }
     var isRecording by remember { mutableStateOf(false) }
     val responseBuilder = remember { StringBuilder() }
+
+
+
+
 
     // Define the ProgressListener
     val progressListener = remember {
@@ -101,8 +108,8 @@ fun ChatUI(
     val sendToModel = {
         chatSession?.let { session ->
             coroutineScope.launch {
-                val formattedPrompt = if (isImageEnabled && imageUri != null) {
-                    String.format("<img>%s</img>%s", imageUri.toString(), inputText)
+                val formattedPrompt = if (isImageEnabled && imageUri.isNotEmpty()) {
+                    String.format("<img>%s</img>%s", imageUri, inputText)
                 } else {
                     inputText
                 }
@@ -128,10 +135,12 @@ fun ChatUI(
         } ?: Log.e("ChatSession", "Model session not initialized yet.")
     }
 
+    val scrollState = rememberScrollState()
+
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(16.dp).verticalScroll(scrollState),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -155,7 +164,12 @@ fun ChatUI(
 
         // Image picker
         ImagePicker(context, isImageEnabled) { selectedUri ->
+
             imageUri = selectedUri
+            // Here you have access to the image's Uri
+            // You can do whatever you want with this URI, like load the image, save it, etc.
+            Log.d("ChatUI", "Image URI: $selectedUri")
+            // Example: Use this URI to load the image or store it somewhere
         }
 
         // Record button
@@ -188,6 +202,7 @@ fun ChatUI(
             Text(text = if (isGenerating) "Generating..." else "Send")
         }
 
+        Text(text = "TTS", fontSize = 30.sp,color = Color.White)
         // TTS control button
         Button(
             onClick = {
