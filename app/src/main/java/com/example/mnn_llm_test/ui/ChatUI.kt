@@ -138,6 +138,7 @@ fun ChatUI(
                 try {
                     session.generate(formattedPrompt, progressListener) // Use the progressListener here
                     inputText = ""
+                    imageUri = ""
                     withContext(Dispatchers.Main) {
                         tts.speak(responseText)
                     }
@@ -218,7 +219,7 @@ fun ChatUI(
                 )
             }
 
-            Text(text = "TTS", fontSize = 40.sp, color = Color.White)
+//            Text(text = "TTS", fontSize = 40.sp, color = Color.White)
             // TTS control button
 //            Button(
 //                onClick = {

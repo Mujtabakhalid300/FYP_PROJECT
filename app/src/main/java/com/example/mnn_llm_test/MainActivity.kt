@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
 
             val context = LocalContext.current
             MnnllmtestTheme {
-                var isLoading by remember { mutableStateOf(false) }
+                var isLoading by remember { mutableStateOf(true) }
                 var progressText by remember { mutableStateOf("Loading Model...") }
                 var chatSession by remember { mutableStateOf<MnnLlmJni.ChatSession?>(null) }
                 val coroutineScope = rememberCoroutineScope()
