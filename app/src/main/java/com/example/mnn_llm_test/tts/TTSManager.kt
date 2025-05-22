@@ -44,7 +44,7 @@ class TTSManager(context: Context) {
 
     fun speak(text: String) {
         val utteranceId = UUID.randomUUID().toString()
-        textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        textToSpeech?.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
     }
 
     fun stop() {

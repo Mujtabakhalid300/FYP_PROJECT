@@ -44,9 +44,10 @@ import com.example.mnn_llm_test.VoskHelper
 import com.example.mnn_llm_test.tts.TTSManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
+import java.util.regex.Pattern
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -65,20 +66,38 @@ fun ChatUI(
     var isImageEnabled by remember { mutableStateOf(true) }
     var isRecording by remember { mutableStateOf(false) }
     val responseBuilder = remember { StringBuilder() }
-
-
-
-
+    val sentenceChannel = remember { Channel<String>(Channel.UNLIMITED) }
+    var sentenceBuffer by remember { mutableStateOf("") } // Buffer for partial sentences
 
     // Define the ProgressListener
     val progressListener = remember {
         object : MnnLlmJni.ProgressListener {
             override fun onProgress(progress: String): Boolean {
-                coroutineScope.launch(Dispatchers.Main) {
+                coroutineScope.launch(Dispatchers.Main) { // UI updates on Main thread
                     responseBuilder.append(progress)
                     responseText = responseBuilder.toString()
+
+                    // Sentence tokenization and queuing logic
+                    sentenceBuffer += progress
+                    val sentencePattern = Pattern.compile("([^.!?]+[.!?])")
+                    val matcher = sentencePattern.matcher(sentenceBuffer)
+                    var lastEnd = 0
+                    while (matcher.find()) {
+                        val sentence = matcher.group(1)?.trim()
+                        if (sentence?.isNotEmpty() == true) {
+                            coroutineScope.launch { // Launch a new coroutine to send to channel
+                                sentenceChannel.send(sentence)
+                            }
+                        }
+                        lastEnd = matcher.end()
+                    }
+                    sentenceBuffer = if (lastEnd < sentenceBuffer.length) {
+                        sentenceBuffer.substring(lastEnd)
+                    } else {
+                        ""
+                    }
                 }
-                return !isGenerating // Continue streaming
+                return !isGenerating // Continue streaming if not explicitly stopped by isGenerating flag
             }
         }
     }
@@ -117,12 +136,21 @@ fun ChatUI(
         }
     }
 
-
+    // TTS Consumer Coroutine
+    LaunchedEffect(tts, sentenceChannel) {
+        launch(Dispatchers.IO) { // Consumption can happen on IO dispatcher
+            for (sentence in sentenceChannel) {
+                if (sentence.isNotBlank()) {
+                    tts.speak(sentence)
+                }
+            }
+        }
+    }
 
     // Send to model function
     val sendToModel = {
         chatSession?.let { session ->
-            coroutineScope.launch {
+            coroutineScope.launch { // This launch might inherit Main dispatcher from rememberCoroutineScope
                 val formattedPrompt = if (isImageEnabled && imageUri.isNotEmpty()) {
                     String.format("<img>%s</img>%s", imageUri, inputText)
                 } else {
@@ -134,18 +162,32 @@ fun ChatUI(
                     responseBuilder.clear()
                     responseText = ""
                     tts.stop() // Stop any ongoing speech
+                    sentenceBuffer = "" // Clear sentence buffer on new generation
                 }
                 try {
-                    session.generate(formattedPrompt, progressListener) // Use the progressListener here
-                    inputText = ""
-                    imageUri = ""
-                    withContext(Dispatchers.Main) {
-                        tts.speak(responseText)
+                    // Explicitly run the generation on Dispatchers.IO
+                    withContext(Dispatchers.IO) {
+                        session.generate(formattedPrompt, progressListener) // Use the progressListener here
+                    }
+                    // After generation, check if there's any remaining text in sentenceBuffer
+                    if (sentenceBuffer.isNotBlank()) {
+                        coroutineScope.launch { // Can be on default dispatcher or main, for channel send
+                            sentenceChannel.send(sentenceBuffer.trim()) // Send remaining part as a sentence
+                            sentenceBuffer = "" // Clear buffer
+                        }
+                    }
+                    withContext(Dispatchers.Main) { // Switch back to main for UI updates
+                        inputText = ""
+                        imageUri = ""
                     }
                 } catch (e: Exception) {
-                    responseText = "Error: ${e.message}"
+                    withContext(Dispatchers.Main) { // Switch back to main for UI updates
+                        responseText = "Error: ${e.message}"
+                    }
                 } finally {
-                    isGenerating = false
+                    withContext(Dispatchers.Main) { // Switch back to main for UI updates
+                        isGenerating = false
+                    }
                 }
             }
         } ?: Log.e("ChatSession", "Model session not initialized yet.")
@@ -153,25 +195,16 @@ fun ChatUI(
 
     val scrollState = rememberScrollState()
 
-
-
     if(!isRecording) {
-
-
         Column(
             modifier = modifier
                 .fillMaxSize()
                 .padding(16.dp).verticalScroll(scrollState),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceAround,
-            
-
         ) {
-
-
             // Image picker
             ImagePicker(context, isImageEnabled) { selectedUri ->
-
                 imageUri = selectedUri
                 // Here you have access to the image's Uri
                 // You can do whatever you want with this URI, like load the image, save it, etc.
@@ -209,7 +242,6 @@ fun ChatUI(
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9C0541)),
                 shape = RoundedCornerShape(40.dp), // ✅ Less rounded corners
                 modifier = Modifier.size(225.dp, 100.dp).semantics(mergeDescendants = true) {contentDescription = "Generate"  } // ✅ Rectangular shape
-
             ) {
                 Text(
                     text = "Generate",
@@ -218,26 +250,7 @@ fun ChatUI(
                     fontWeight = FontWeight.Bold
                 )
             }
-
-//            Text(text = "TTS", fontSize = 40.sp, color = Color.White)
-            // TTS control button
-//            Button(
-//                onClick = {
-//                    if (isSpeaking) {
-//                        tts.stop()
-//                    } else {
-//                        tts.speak(responseText)
-//                    }
-//                },
-//                enabled = responseText.isNotEmpty()
-//            ) {
-//                Text(text = if (isSpeaking) "Stop TTS" else "Play TTS")
-//            }
-//
-//            // Response text
-//            Text(text = responseText, color = Color.Black)
         }
-
     } else{
         Column(
             modifier = modifier
@@ -245,7 +258,6 @@ fun ChatUI(
                 .padding(16.dp).verticalScroll(scrollState),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
-
         ){
             Button(
                 onClick = {
