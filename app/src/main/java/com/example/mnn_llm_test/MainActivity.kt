@@ -1,6 +1,7 @@
 package com.example.mnn_llm_test
 
 import android.os.Bundle
+import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -25,6 +26,7 @@ import com.example.mnn_llm_test.tts.TTSManager
 import com.example.mnn_llm_test.ui.ChatUI
 import com.example.mnn_llm_test.ui.WelcomeScreen
 import com.example.mnn_llm_test.ui.theme.MnnllmtestTheme
+import com.example.mnn_llm_test.utils.HuggingFaceDownloader
 import com.example.mnn_llm_test.utils.copyAssetFolderToInternalStorage
 import com.example.mnn_llm_test.utils.printAssetFileSizes
 import kotlinx.coroutines.Dispatchers
@@ -70,30 +72,37 @@ class MainActivity : ComponentActivity() {
                 // Load model in the background
                 LaunchedEffect(Unit) {
                     withContext(Dispatchers.IO) {
-                        val modelDir = filesDir.absolutePath + "/models/Qwen2-VL-2B-Instruct-MNN/"
-                        val modelDirFile = File(modelDir)
+                        val repoName = "taobao-mnn/Qwen2-VL-2B-Instruct-MNN"
+                        val commitSha = "38f5d45ae192dc56e92c609c6447b7e7232bda53"
+                        val localFolderName = "Qwen2-VL-2B-Instruct-MNN-$commitSha"
 
-                        // Ensure directory exists
-                        if (!modelDirFile.exists()) modelDirFile.mkdirs()
+                        // Downloads/taobao-mnn/Qwen2-VL-2B-Instruct-MNN-<commitSha>/
+                        val downloadsDir = File(
+                            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                            "ignored/taobao-mnn/$localFolderName"
+                        )
 
-                        Log.d("ModelLoading", "Copying model files from assets to internal storage...")
-                        copyAssetFolderToInternalStorage(applicationContext, "models/Qwen2-VL-2B-Instruct-MNN", modelDir)
-//                        val copiedFiles = File(modelDir).listFiles()
-//                        copiedFiles?.forEach { file ->
-//                            Log.d("ModelCopy", "Copied file: ${file.name}, Path: ${file.absolutePath}")
-//                        }
-                        val modelFile = File(modelDir, "llm.mnn")
+                        val downloader = HuggingFaceDownloader(applicationContext)
+                        downloader.downloadModelFiles(
+                            repo = repoName,
+                            commitSha = commitSha,
+                            outputDirName = "ignored", // ignored, downloader uses Downloads/taobao-mnn/$localFolderName
+                            onProgress = { downloaded, total, currentFile ->
+                                Log.d("DownloadProgress", "Downloading $currentFile ($downloaded/$total)")
+                            }
+                        )
+
+                        val modelFile = File(downloadsDir, "llm.mnn")
                         if (modelFile.exists()) {
-                            Log.d("ModelLoading", "Model file exists at: ${modelFile.absolutePath}")
+                            Log.d("ModelLoading", "✅ Model file exists at: ${modelFile.absolutePath}")
                         } else {
-                            Log.e("ModelLoading", "Model file does not exist at: ${modelFile.absolutePath}")
+                            Log.e("ModelLoading", "❌ Model file does not exist at: ${modelFile.absolutePath}")
+                            return@withContext
                         }
 
-                        val modelConfigPath = File(modelDir, "config.json").absolutePath
+                        val modelConfigPath = File(downloadsDir, "config.json").absolutePath
                         Log.d("ModelLoading", "Model config file: $modelConfigPath")
-                        Log.d("PRINTING SIZES", "------------------------------")
-                        printAssetFileSizes(applicationContext,"models/Qwen2-VL-2B-Instruct-MNN")
-                        Log.d("PRINTING SIZES", "------------------------------")
+
                         try {
                             Log.d("ModelLoading", "Initializing the model...")
                             val session = MnnLlmJni.ChatSession(
@@ -108,12 +117,15 @@ class MainActivity : ComponentActivity() {
                                 chatSession = session
                                 isLoading = false
                             }
-                            Log.d("ModelLoading", "Model initialized successfully.")
+                            Log.d("ModelLoading", "✅ Model initialized successfully.")
                         } catch (e: Exception) {
-                            Log.e("ModelLoading", "Error initializing the model", e)
+                            Log.e("ModelLoading", "❌ Error initializing the model", e)
                         }
                     }
                 }
+
+
+
 
                 // Main UI content after model loading
 
