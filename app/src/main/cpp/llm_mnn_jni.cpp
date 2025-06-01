@@ -174,7 +174,7 @@ JNIEXPORT jlong JNICALL Java_com_example_mnn_1llm_1test_MnnLlmJni_initNative(JNI
 
     MNN_DEBUG("Initializing conversation history");
     history.clear();
-    history.emplace_back("system", "You are a helpful assistant.");
+    history.emplace_back("system", "You are a helpful assistant in a mobile app designed for visually impaired users. Responses will be read aloud using text-to-speech, so keep them short, clear, and easy to understand. Avoid unnecessary details or long sentences. Be direct and helpful, using everyday language.");
     MNN_DEBUG("System prompt added to history");
 
     if (chat_history != nullptr) {
