@@ -38,6 +38,7 @@ import java.util.UUID
 // Define message sender types
 const val SENDER_USER = "user"
 const val SENDER_MODEL = "model"
+const val SENDER_IMAGE = "image_display" // Special sender type for image display message
 
 // Custom ProgressListener interface for ChatScreen that includes finalizeMessage
 interface ChatProgressListener : MnnLlmJni.ProgressListener {
@@ -57,12 +58,22 @@ fun ChatScreen(
     var isGenerating by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     var imageAlreadySentInConversation by remember { mutableStateOf(false) }
+    var initialImageProcessed by remember { mutableStateOf(false) }
 
     LaunchedEffect(imagePath) {
-        // Reset if a new image is provided (or if image is removed)
         imageAlreadySentInConversation = false
-        // Optionally, clear chat messages if a new image means a new conversation context
-        // chatMessages.clear() // Uncomment if new image should always start a fresh chat log
+        initialImageProcessed = false // Reset for new image
+        chatMessages.removeAll { it.sender == SENDER_IMAGE } // Remove old image display message
+        if (imagePath != null) {
+            // Add a placeholder message for the image to be displayed in the LazyColumn
+            chatMessages.add(0, ChatMessage(
+                id = UUID.randomUUID().toString(),
+                text = imagePath, // Store imagePath here
+                sender = SENDER_IMAGE,
+                timestamp = System.currentTimeMillis() - 1 // Ensure it's slightly older for sorting if needed
+            ))
+            initialImageProcessed = true
+        }
     }
 
     val progressListener = remember {
@@ -103,7 +114,7 @@ fun ChatScreen(
                         if (chatMessages.isNotEmpty()) listState.animateScrollToItem(chatMessages.size - 1)
                     }
                 }
-                return !isGenerating // True to STOP, False to CONTINUE
+                return !isGenerating
             }
 
             override fun finalizeMessage() {
@@ -132,9 +143,12 @@ fun ChatScreen(
             isGenerating = true
             progressListener.finalizeMessage()
 
-            val formattedPrompt = if (imagePath != null && !imageAlreadySentInConversation) {
-                imageAlreadySentInConversation = true // Mark as sent for this conversation instance
-                "<img>${imagePath}</img>$userMessageText"
+            // Use imagePath directly from Composable state, not from a potentially stale message item
+            val currentImagePath = imagePath 
+
+            val formattedPrompt = if (currentImagePath != null && !imageAlreadySentInConversation) {
+                imageAlreadySentInConversation = true
+                "<img>${currentImagePath}</img>$userMessageText"
             } else {
                 userMessageText
             }
@@ -178,65 +192,83 @@ fun ChatScreen(
             )
         },
         bottomBar = {
-            Column {
-                if (imagePath != null) {
-                    Image(
-                        painter = rememberAsyncImagePainter(
-                            ImageRequest.Builder(LocalContext.current).data(data = File(imagePath)).apply(block = fun ImageRequest.Builder.() {
-                                crossfade(true)
-                            }).build()
-                        ),
-                        contentDescription = "Captured Image",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(150.dp)
-                            .padding(start = 8.dp, end = 8.dp, bottom = 4.dp)
-                            .clip(RoundedCornerShape(8.dp)),
-                        contentScale = ContentScale.Crop
-                    )
+            // Image display is now part of the LazyColumn
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp) // Apply padding for system bars here if needed, or rely on Scaffold's contentPadding
+                    .navigationBarsPadding(), // Add padding for the navigation bar
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = inputText,
+                    onValueChange = { inputText = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Type a message...") },
+                    enabled = !isGenerating
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(onClick = {
+                    Log.d("ChatScreen", "Mic button pressed")
+                }, enabled = !isGenerating) {
+                    Icon(Icons.Default.Mic, contentDescription = "Record Audio")
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    onClick = sendMessage,
+                    enabled = !isGenerating && inputText.text.isNotBlank()
                 ) {
-                    OutlinedTextField(
-                        value = inputText,
-                        onValueChange = { inputText = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Type a message...") },
-                        enabled = !isGenerating
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    IconButton(onClick = {
-                        Log.d("ChatScreen", "Mic button pressed")
-                    }, enabled = !isGenerating) {
-                        Icon(Icons.Default.Mic, contentDescription = "Record Audio")
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = sendMessage,
-                        enabled = !isGenerating && inputText.text.isNotBlank()
-                    ) {
-                        Icon(Icons.Default.Send, contentDescription = "Send Message")
-                    }
+                    Icon(Icons.Default.Send, contentDescription = "Send Message")
                 }
             }
         }
-    ) { paddingValues ->
+    ) { contentPadding -> // contentPadding from Scaffold accounts for TopAppBar and BottomAppBar
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 8.dp),
+                .padding(contentPadding) // Apply Scaffold's padding
+                // .navigationBarsPadding() // Apply here if bottomBar doesn't use it and items go behind nav bar
+                .padding(horizontal = 8.dp), // Additional horizontal padding for messages
             reverseLayout = false
         ) {
+            // The image is now added directly to chatMessages list with SENDER_IMAGE type
             items(chatMessages) { message ->
-                MessageBubble(message)
+                if (message.sender == SENDER_IMAGE) {
+                    ImageBubble(imagePath = message.text) // Pass imagePath from message text
+                } else {
+                    MessageBubble(message)
+                }
             }
         }
+    }
+}
+
+@Composable
+fun ImageBubble(imagePath: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp, horizontal = 8.dp) // Consistent padding
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant), // Neutral background
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = rememberAsyncImagePainter(
+                ImageRequest.Builder(LocalContext.current).data(data = File(imagePath)).apply(block = fun ImageRequest.Builder.() {
+                    crossfade(true)
+                    // placeholder(R.drawable.ic_launcher_foreground) // Replace with actual placeholder
+                    // error(R.drawable.ic_launcher_background) // Replace with actual error drawable
+                }).build()
+            ),
+            contentDescription = "Captured Image",
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 250.dp) // Max height for the image bubble
+                .clip(RoundedCornerShape(12.dp)), // Clip image itself too
+            contentScale = ContentScale.Fit // Fit the image within bounds
+        )
     }
 }
 

@@ -29,6 +29,7 @@ import java.io.File
 import android.os.Environment
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -43,8 +44,14 @@ fun AppNavigator(
     isModelLoading: Boolean // Pass the loading state
 ) {
     if (isModelLoading) {
-         Scaffold(modifier = Modifier.fillMaxSize(), containerColor = Color.White) { innerPadding ->
-            WelcomeScreen(LocalContext.current, modifier = Modifier.padding(innerPadding))
+         Scaffold(
+             modifier = Modifier.fillMaxSize().systemBarsPadding(),
+             containerColor = Color.White
+         ) { innerPadding ->
+            WelcomeScreen(
+                LocalContext.current,
+                modifier = Modifier.padding(innerPadding).fillMaxSize()
+            )
         }
     } else {
         NavHost(navController = navController, startDestination = Screen.MainMenu.route) {
