@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,9 +31,11 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.example.mnn_llm_test.MnnLlmJni
 import com.example.mnn_llm_test.model.ChatMessage
+import com.example.mnn_llm_test.navigation.Screen
 import com.example.mnn_llm_test.ui.chatview.ChatViewModel
 import com.example.mnn_llm_test.ui.chatview.ChatViewModelFactory
 import com.example.mnntest.ChatApplication
+import com.example.mnntest.data.ChatThread
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -62,6 +65,10 @@ fun ChatScreen(
     val viewModel: ChatViewModel = viewModel(
         factory = ChatViewModelFactory(repository, threadId)
     )
+
+    // Add drawer state and collect all chat threads
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val allThreads by viewModel.allChatThreads.collectAsState()
 
     var inputText by remember { mutableStateOf(TextFieldValue("")) }
     val uiMessages by viewModel.messages.collectAsState()
@@ -186,93 +193,132 @@ fun ChatScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(viewModel.chatThread.collectAsState().value?.title ?: "Chat") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+    // Encapsulate existing Scaffold within ModalNavigationDrawer
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                Text("Chat Sessions", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium)
+                Divider()
+                if (allThreads.isEmpty()) {
+                    Text("No chat sessions yet.", modifier = Modifier.padding(16.dp))
+                } else {
+                    LazyColumn {
+                        items(allThreads, key = { it.id }) { thread ->
+                            NavigationDrawerItem(
+                                label = { Text(thread.title ?: "Chat ${thread.id}") },
+                                selected = thread.id == threadId, // Highlight current thread
+                                onClick = {
+                                    coroutineScope.launch {
+                                        drawerState.close()
+                                        if (thread.id != threadId) { // Avoid navigating to the same screen
+                                            navController.navigate(Screen.ChatView.routeWithArgs(threadId = thread.id)) {
+                                                // Clear back stack up to the start destination and launch as single top
+                                                popUpTo(navController.graph.startDestinationId) {
+                                                    inclusive = false
+                                                }
+                                                launchSingleTop = true
+                                            }
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                            )
+                        }
                     }
-                }
-            )
-        },
-        bottomBar = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp)
-                    .navigationBarsPadding(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = inputText,
-                    onValueChange = { inputText = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Type a message...") },
-                    enabled = !isGenerating
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                IconButton(onClick = {
-                    Log.d("ChatScreen", "Mic button pressed")
-                }, enabled = !isGenerating) {
-                    Icon(Icons.Default.Mic, contentDescription = "Record Audio")
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(
-                    onClick = sendMessage,
-                    enabled = !isGenerating && inputText.text.isNotBlank()
-                ) {
-                    Icon(Icons.Default.Send, contentDescription = "Send Message")
                 }
             }
         }
-    ) { contentPadding ->
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(contentPadding)
-                .padding(horizontal = 8.dp),
-            reverseLayout = false
-        ) {
-            if (initialImageProcessed) {
-                currentChatImage?.imagePath?.let { path ->
-                    item("displayed_image") {
-                        ImageCard(imagePath = path)
+    ) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(viewModel.chatThread.collectAsState().value?.title ?: "Chat") },
+                    navigationIcon = {
+                        // IconButton to open drawer
+                        IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
+                            Icon(Icons.Filled.Menu, contentDescription = "Open Navigation Drawer")
+                        }
+                    }
+                )
+            },
+            bottomBar = {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp)
+                        .navigationBarsPadding(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = inputText,
+                        onValueChange = { inputText = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("Type a message...") },
+                        enabled = !isGenerating
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(onClick = {
+                        Log.d("ChatScreen", "Mic button pressed")
+                    }, enabled = !isGenerating) {
+                        Icon(Icons.Default.Mic, contentDescription = "Record Audio")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = sendMessage,
+                        enabled = !isGenerating && inputText.text.isNotBlank()
+                    ) {
+                        Icon(Icons.Default.Send, contentDescription = "Send Message")
                     }
                 }
             }
-
-            items(uiMessages, key = { it.id }) { message ->
-                MessageBubble(message = message, onRetry = {
-                    Log.d("ChatScreen", "Retry logic for message: ${message.text}")
-                    if (message.sender == SENDER_MODEL && inputText.text.isBlank()) {
-                        // Potentially find the user message that led to this error and resend
-                    } else if (message.sender == SENDER_USER) {
-                        val userMessageText = message.text
-                        isGenerating = true
-                        progressListener.finalizeMessage()
-
-                        val imagePathForRetry = currentChatImage?.imagePath
-                        val promptForRetry = if (imagePathForRetry != null && !imageAlreadySentInConversation) {
-                            "<img>${imagePathForRetry}</img>$userMessageText"
-                        } else {
-                            userMessageText
+        ) { contentPadding ->
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding)
+                    .padding(horizontal = 8.dp),
+                reverseLayout = false
+            ) {
+                if (initialImageProcessed) {
+                    currentChatImage?.imagePath?.let { path ->
+                        item("displayed_image") {
+                            ImageCard(imagePath = path)
                         }
-                        coroutineScope.launch(Dispatchers.IO) {
-                            try {
-                                chatSession?.generate(promptForRetry, progressListener)
-                            } catch (e: Exception) {
-                                Log.e("ChatScreen", "Error during LLM prediction on retry: ${e.message}", e)
-                                launch(Dispatchers.Main) {
-                                    viewModel.addMessage("Retry Error: ${e.message}", SENDER_MODEL)
-                                    progressListener.finalizeMessage()
+                    }
+                }
+
+                items(uiMessages, key = { it.id }) { message ->
+                    MessageBubble(message = message, onRetry = {
+                        Log.d("ChatScreen", "Retry logic for message: ${message.text}")
+                        if (message.sender == SENDER_MODEL && inputText.text.isBlank()) {
+                            // Potentially find the user message that led to this error and resend
+                        } else if (message.sender == SENDER_USER) {
+                            val userMessageText = message.text
+                            isGenerating = true
+                            progressListener.finalizeMessage()
+
+                            val imagePathForRetry = currentChatImage?.imagePath
+                            val promptForRetry = if (imagePathForRetry != null && !imageAlreadySentInConversation) {
+                                "<img>${imagePathForRetry}</img>$userMessageText"
+                            } else {
+                                userMessageText
+                            }
+                            coroutineScope.launch(Dispatchers.IO) {
+                                try {
+                                    chatSession?.generate(promptForRetry, progressListener)
+                                } catch (e: Exception) {
+                                    Log.e("ChatScreen", "Error during LLM prediction on retry: ${e.message}", e)
+                                    launch(Dispatchers.Main) {
+                                        viewModel.addMessage("Retry Error: ${e.message}", SENDER_MODEL)
+                                        progressListener.finalizeMessage()
+                                    }
                                 }
                             }
                         }
-                    }
-                })
+                    })
+                }
             }
         }
     }

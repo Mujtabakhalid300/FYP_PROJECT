@@ -22,6 +22,9 @@ class ChatViewModel(private val repository: ChatRepository, val threadId: Int) :
     val chatImage: StateFlow<ChatThreadImage?> = repository.getChatThreadImage(threadId)
         .stateIn(viewModelScope, SharingStarted.Lazily, null)
 
+    val allChatThreads: StateFlow<List<ChatThread>> = repository.getAllChatThreads()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     val messages: StateFlow<List<com.example.mnn_llm_test.model.ChatMessage>> = repository.getMessagesForThread(threadId)
         .map { dbMessages ->
             dbMessages.map { dbMsg ->
