@@ -40,6 +40,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavHostController
 import com.example.mnn_llm_test.navigation.Screen
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -60,6 +62,7 @@ fun CameraScreen(
     var hasCameraPermission by remember { mutableStateOf(false) }
     val imageCaptureUseCase = remember { ImageCapture.Builder().build() }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    val coroutineScope = rememberCoroutineScope()
 
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -113,15 +116,13 @@ fun CameraScreen(
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(onClick = {
-                    takePhoto(context, imageCaptureUseCase, cameraExecutor) {filePath ->
+                    takePhoto(context, imageCaptureUseCase, cameraExecutor, coroutineScope) {filePath ->
                         if (filePath != null) {
                             Log.d("CameraScreen", "Photo captured: $filePath")
-                            // URL encode the file path to be safe for navigation
                             val encodedFilePath = Uri.encode(filePath)
                             navController.navigate("${Screen.ChatView.route}?imagePath=$encodedFilePath")
                         } else {
                             Log.e("CameraScreen", "Photo capture failed or file path is null")
-                            // Optionally, show a toast or message to the user
                         }
                     }
                 }) {
@@ -143,12 +144,12 @@ fun CameraPreview(
     context: Context,
     lifecycleOwner: androidx.lifecycle.LifecycleOwner,
     imageCaptureUseCase: ImageCapture,
-    cameraExecutor: ExecutorService // Re-use executor from CameraScreen
+    cameraExecutor: ExecutorService
 ) {
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
     val previewView = remember { PreviewView(context) }
     val lastLoggedTime = remember { AtomicLong(0) }
-    val logIntervalMs = 100 // For ~10 FPS logging
+    val logIntervalMs = 100
 
     AndroidView({ previewView }, modifier = Modifier.fillMaxSize()) {
         cameraProviderFuture.addListener({
@@ -179,8 +180,8 @@ fun CameraPreview(
                     lifecycleOwner,
                     cameraSelector,
                     preview,
-                    imageAnalysis, // Add image analysis
-                    imageCaptureUseCase // Add image capture
+                    imageAnalysis,
+                    imageCaptureUseCase
                 )
             } catch (exc: Exception) {
                 Log.e("CameraScreen", "Use case binding failed", exc)
@@ -193,11 +194,11 @@ fun takePhoto(
     context: Context,
     imageCapture: ImageCapture,
     cameraExecutor: ExecutorService,
+    coroutineScope: kotlinx.coroutines.CoroutineScope,
     onPhotoTaken: (String?) -> Unit
 ) {
-    // Create a file to save the image
     val photoFile = File(
-        context.getExternalFilesDir(null), // Using app-specific directory
+        context.getExternalFilesDir(null),
         SimpleDateFormat(FILENAME_FORMAT, Locale.US).format(System.currentTimeMillis()) + ".jpg"
     )
 
@@ -205,17 +206,21 @@ fun takePhoto(
 
     imageCapture.takePicture(
         outputOptions,
-        cameraExecutor, // Use the passed executor
+        cameraExecutor,
         object : ImageCapture.OnImageSavedCallback {
             override fun onError(exc: ImageCaptureException) {
                 Log.e("CameraScreen", "Photo capture failed: ${exc.message}", exc)
-                onPhotoTaken(null)
+                coroutineScope.launch(Dispatchers.Main) {
+                    onPhotoTaken(null)
+                }
             }
 
             override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                 val savedUri = output.savedUri ?: Uri.fromFile(photoFile)
                 Log.d("CameraScreen", "Photo capture succeeded: $savedUri, AbsolutePath: ${photoFile.absolutePath}")
-                onPhotoTaken(photoFile.absolutePath) // Return the absolute path
+                coroutineScope.launch(Dispatchers.Main) {
+                    onPhotoTaken(photoFile.absolutePath)
+                }
             }
         }
     )

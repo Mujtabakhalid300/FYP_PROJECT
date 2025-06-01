@@ -32,38 +32,41 @@ import com.example.mnn_llm_test.model.ChatMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.UUID
 
 // Define message sender types
 const val SENDER_USER = "user"
 const val SENDER_MODEL = "model"
 
+// Custom ProgressListener interface for ChatScreen that includes finalizeMessage
+interface ChatProgressListener : MnnLlmJni.ProgressListener {
+    fun finalizeMessage()
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     navController: NavHostController,
     chatSession: MnnLlmJni.ChatSession?,
-    imagePath: String? // Decoded image path from navigation
+    imagePath: String?
 ) {
     var inputText by remember { mutableStateOf(TextFieldValue("")) }
     val chatMessages = remember { mutableStateListOf<ChatMessage>() }
     val coroutineScope = rememberCoroutineScope()
     var isGenerating by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
-    val context = LocalContext.current // For Coil ImageLoader
+    var imageAlreadySentInConversation by remember { mutableStateOf(false) }
 
-    // If an image path is provided, add it as an initial visual element or message.
-    // For simplicity, we'll just show it above the chat input.
-    // A more integrated approach might involve a specific ChatMessage type for images.
     LaunchedEffect(imagePath) {
-        if (imagePath != null && chatMessages.none { it.text.contains(imagePath) && it.sender == "system_image_indicator"}) {
-            // You could add a specific message type for images or just handle display
-            // For now, we don't add it as a message to keep chat flow clean, just display it.
-        }
+        // Reset if a new image is provided (or if image is removed)
+        imageAlreadySentInConversation = false
+        // Optionally, clear chat messages if a new image means a new conversation context
+        // chatMessages.clear() // Uncomment if new image should always start a fresh chat log
     }
 
-    val progressListener = remember(chatMessages) { // Recreate if chatMessages identity changes (though it won't often)
-        object : MnnLlmJni.ProgressListener {
+    val progressListener = remember {
+        object : ChatProgressListener {
             private var currentModelMessageId: String? = null
             private val responseBuilder = StringBuilder()
 
@@ -73,7 +76,6 @@ fun ChatScreen(
                     val fullResponse = responseBuilder.toString()
 
                     if (currentModelMessageId == null) {
-                        // First progress update, create new model message
                         val newMessage = ChatMessage(
                             id = UUID.randomUUID().toString(),
                             text = fullResponse,
@@ -83,12 +85,10 @@ fun ChatScreen(
                         chatMessages.add(newMessage)
                         currentModelMessageId = newMessage.id
                     } else {
-                        // Subsequent updates, modify existing model message
                         val existingMessageIndex = chatMessages.indexOfFirst { it.id == currentModelMessageId }
                         if (existingMessageIndex != -1) {
                             chatMessages[existingMessageIndex] = chatMessages[existingMessageIndex].copy(text = fullResponse)
                         } else {
-                            // Fallback if message somehow disappeared (should not happen)
                             val newMessage = ChatMessage(
                                 id = UUID.randomUUID().toString(),
                                 text = fullResponse,
@@ -99,18 +99,14 @@ fun ChatScreen(
                             currentModelMessageId = newMessage.id
                         }
                     }
-                    // Scroll to the bottom when new message or progress comes in
                     coroutineScope.launch {
-                        listState.animateScrollToItem(chatMessages.size - 1)
+                        if (chatMessages.isNotEmpty()) listState.animateScrollToItem(chatMessages.size - 1)
                     }
                 }
-                return !isGenerating // Continue streaming if isGenerating is true (active generation)
-                                     // This logic was inverted from old ChatUI, !isGenerating meant stop.
-                                     // Here, returning true means continue, false means stop.
-                                     // So we return true while isGenerating.
+                return !isGenerating // True to STOP, False to CONTINUE
             }
-            // Call this to finalize a message and prepare for a new one
-            fun finalizeMessage() {
+
+            override fun finalizeMessage() {
                 currentModelMessageId = null
                 responseBuilder.clear()
             }
@@ -127,19 +123,17 @@ fun ChatScreen(
                 timestamp = System.currentTimeMillis()
             )
             chatMessages.add(userMessage)
-            inputText = TextFieldValue("") // Clear input
+            inputText = TextFieldValue("")
 
             coroutineScope.launch {
-                listState.animateScrollToItem(chatMessages.size - 1)
+                if (chatMessages.isNotEmpty()) listState.animateScrollToItem(chatMessages.size - 1)
             }
 
             isGenerating = true
-            (progressListener as? dynamic).finalizeMessage() // Reset progress listener for new response
+            progressListener.finalizeMessage()
 
-            val formattedPrompt = if (imagePath != null) {
-                // The VLM expects the image path to be usable by the native code.
-                // The old ChatUI used: String.format("<img>%s</img>%s", imageUri, inputText)
-                // Ensure imagePath is the correct format expected by your JNI/VLM.
+            val formattedPrompt = if (imagePath != null && !imageAlreadySentInConversation) {
+                imageAlreadySentInConversation = true // Mark as sent for this conversation instance
                 "<img>${imagePath}</img>$userMessageText"
             } else {
                 userMessageText
@@ -147,7 +141,7 @@ fun ChatScreen(
 
             Log.d("ChatScreen", "Sending to LLM: Prompt: '$formattedPrompt'")
 
-            coroutineScope.launch(Dispatchers.IO) { // Perform generation on IO thread
+            coroutineScope.launch(Dispatchers.IO) {
                 try {
                     chatSession.generate(formattedPrompt, progressListener)
                 } catch (e: Exception) {
@@ -165,7 +159,7 @@ fun ChatScreen(
                 } finally {
                     coroutineScope.launch(Dispatchers.Main) {
                         isGenerating = false
-                        (progressListener as? dynamic).finalizeMessage() // Ensure it's reset after generation
+                        progressListener.finalizeMessage()
                     }
                 }
             }
@@ -190,7 +184,6 @@ fun ChatScreen(
                         painter = rememberAsyncImagePainter(
                             ImageRequest.Builder(LocalContext.current).data(data = File(imagePath)).apply(block = fun ImageRequest.Builder.() {
                                 crossfade(true)
-                                // Add placeholder/error drawables if desired
                             }).build()
                         ),
                         contentDescription = "Captured Image",
@@ -217,7 +210,6 @@ fun ChatScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     IconButton(onClick = {
-                        // TODO: Implement STT/VoskHelper integration for inputText
                         Log.d("ChatScreen", "Mic button pressed")
                     }, enabled = !isGenerating) {
                         Icon(Icons.Default.Mic, contentDescription = "Record Audio")
@@ -239,7 +231,7 @@ fun ChatScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .padding(horizontal = 8.dp),
-            reverseLayout = false // New messages appear at the bottom and list scrolls down
+            reverseLayout = false
         ) {
             items(chatMessages) { message ->
                 MessageBubble(message)
@@ -267,7 +259,7 @@ fun MessageBubble(message: ChatMessage) {
                 .clip(RoundedCornerShape(12.dp))
                 .background(bubbleColor)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
-                .widthIn(max = 300.dp), // Max width for bubbles
+                .widthIn(max = 300.dp),
             fontSize = 16.sp
         )
     }
