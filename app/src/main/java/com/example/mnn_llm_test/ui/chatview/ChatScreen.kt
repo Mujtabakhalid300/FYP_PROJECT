@@ -24,16 +24,21 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.example.mnn_llm_test.MnnLlmJni
 import com.example.mnn_llm_test.model.ChatMessage
+import com.example.mnn_llm_test.ui.chatview.ChatViewModel
+import com.example.mnn_llm_test.ui.chatview.ChatViewModelFactory
+import com.example.mnntest.ChatApplication
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.UUID
+import java.sql.Timestamp
 
 // Define message sender types
 const val SENDER_USER = "user"
@@ -50,35 +55,48 @@ interface ChatProgressListener : MnnLlmJni.ProgressListener {
 fun ChatScreen(
     navController: NavHostController,
     chatSession: MnnLlmJni.ChatSession?,
-    imagePath: String?
+    threadId: Int
 ) {
+    val context = LocalContext.current
+    val repository = (context.applicationContext as ChatApplication).repository
+    val viewModel: ChatViewModel = viewModel(
+        factory = ChatViewModelFactory(repository, threadId)
+    )
+
     var inputText by remember { mutableStateOf(TextFieldValue("")) }
-    val chatMessages = remember { mutableStateListOf<ChatMessage>() }
+    val uiMessages by viewModel.messages.collectAsState()
+    val currentChatImage by viewModel.chatImage.collectAsState()
     val coroutineScope = rememberCoroutineScope()
     var isGenerating by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     var imageAlreadySentInConversation by remember { mutableStateOf(false) }
     var initialImageProcessed by remember { mutableStateOf(false) }
 
-    LaunchedEffect(imagePath) {
+    LaunchedEffect(threadId, currentChatImage) {
         imageAlreadySentInConversation = false
-        initialImageProcessed = false // Reset for new image
-        chatMessages.removeAll { it.sender == SENDER_IMAGE } // Remove old image display message
-        if (imagePath != null) {
-            // Add a placeholder message for the image to be displayed in the LazyColumn
-            chatMessages.add(0, ChatMessage(
-                id = UUID.randomUUID().toString(),
-                text = imagePath, // Store imagePath here
-                sender = SENDER_IMAGE,
-                timestamp = System.currentTimeMillis() - 1 // Ensure it's slightly older for sorting if needed
-            ))
-            initialImageProcessed = true
+        initialImageProcessed = false
+
+        currentChatImage?.let { image ->
+            image.imagePath?.let { path ->
+                val imageMessageExists = uiMessages.any { it.sender == SENDER_IMAGE && it.text == path }
+                if (!imageMessageExists) {
+                    // Adding a placeholder via ViewModel ensures it's stored if needed,
+                    // or the ViewModel can decide not to store it if it's purely for display.
+                    // For now, we assume addMessage handles it.
+                    // Consider a specific ViewModel function if SENDER_IMAGE messages aren't actual DB messages.
+                    // viewModel.addMessage(path, SENDER_IMAGE) // This line adds it to the DB.
+                    // For a non-DB placeholder, you'd manage a separate list in the Composable or ViewModel state.
+                    // We will keep it as is for now, it will be stored in the DB as a message.
+                }
+                initialImageProcessed = true
+            }
         }
     }
 
     val progressListener = remember {
         object : ChatProgressListener {
-            private var currentModelMessageId: String? = null
+            private var currentModelMessageId: String? = null // This is the UI Model ID (String)
+            private var currentDbMessageId: Int? = null      // This will be the DB ID (Int)
             private val responseBuilder = StringBuilder()
 
             override fun onProgress(progress: String): Boolean {
@@ -86,40 +104,46 @@ fun ChatScreen(
                     responseBuilder.append(progress)
                     val fullResponse = responseBuilder.toString()
 
-                    if (currentModelMessageId == null) {
-                        val newMessage = ChatMessage(
-                            id = UUID.randomUUID().toString(),
-                            text = fullResponse,
-                            sender = SENDER_MODEL,
-                            timestamp = System.currentTimeMillis()
-                        )
-                        chatMessages.add(newMessage)
-                        currentModelMessageId = newMessage.id
+                    if (currentDbMessageId == null) { // Use DB ID to check if it's the first token
+                        // First token, create new message
+                        launch {
+                            val newId = viewModel.addNewMessageAndGetId(fullResponse, SENDER_MODEL)
+                            newId?.let {
+                                currentDbMessageId = it.toInt() // Store DB ID
+                                // We need a way to get the String UI ID if the list updates immediately.
+                                // For now, let's assume the list will update and we can find it,
+                                // or rely on the fact that updates will use currentDbMessageId.
+                                // To make the UI update immediately with a placeholder, we might need a different approach.
+                            }
+                        }
                     } else {
-                        val existingMessageIndex = chatMessages.indexOfFirst { it.id == currentModelMessageId }
-                        if (existingMessageIndex != -1) {
-                            chatMessages[existingMessageIndex] = chatMessages[existingMessageIndex].copy(text = fullResponse)
-                        } else {
-                            val newMessage = ChatMessage(
-                                id = UUID.randomUUID().toString(),
-                                text = fullResponse,
-                                sender = SENDER_MODEL,
-                                timestamp = System.currentTimeMillis()
-                            )
-                            chatMessages.add(newMessage)
-                            currentModelMessageId = newMessage.id
+                        // Subsequent tokens, update existing message
+                        currentDbMessageId?.let {
+                            viewModel.updateMessage(it, fullResponse)
                         }
                     }
-                    coroutineScope.launch {
-                        if (chatMessages.isNotEmpty()) listState.animateScrollToItem(chatMessages.size - 1)
+                    // Scroll to bottom is good
+                    if (uiMessages.isNotEmpty()) {
+                        listState.animateScrollToItem(uiMessages.size - 1)
                     }
                 }
-                return !isGenerating
+                return isGenerating
             }
 
             override fun finalizeMessage() {
-                currentModelMessageId = null
-                responseBuilder.clear()
+                coroutineScope.launch(Dispatchers.Main) {
+                    // Update the final state of the message in DB (already done by onProgress typically)
+                    // chatThread.value might need an update for its updatedAt timestamp
+                    viewModel.chatThread.value?.let { thread ->
+                        val app = context.applicationContext as ChatApplication
+                        app.repository.updateChatThread(thread.copy(updatedAt = Timestamp(System.currentTimeMillis())))
+                    }
+
+                    responseBuilder.clear()
+                    currentModelMessageId = null // Reset UI model ID tracker (if used)
+                    currentDbMessageId = null    // Reset DB ID tracker
+                    isGenerating = false
+                }
             }
         }
     }
@@ -127,26 +151,19 @@ fun ChatScreen(
     val sendMessage = {
         if (inputText.text.isNotBlank() && chatSession != null && !isGenerating) {
             val userMessageText = inputText.text
-            val userMessage = ChatMessage(
-                id = UUID.randomUUID().toString(),
-                text = userMessageText,
-                sender = SENDER_USER,
-                timestamp = System.currentTimeMillis()
-            )
-            chatMessages.add(userMessage)
+            viewModel.addMessage(userMessageText, SENDER_USER)
             inputText = TextFieldValue("")
 
             coroutineScope.launch {
-                if (chatMessages.isNotEmpty()) listState.animateScrollToItem(chatMessages.size - 1)
+                if (uiMessages.isNotEmpty()) listState.animateScrollToItem(uiMessages.size - 1)
             }
 
             isGenerating = true
             progressListener.finalizeMessage()
 
-            // Use imagePath directly from Composable state, not from a potentially stale message item
-            val currentImagePath = imagePath 
+            val currentImagePath = currentChatImage?.imagePath
 
-            val formattedPrompt = if (currentImagePath != null && !imageAlreadySentInConversation) {
+            val formattedPrompt = if (currentImagePath != null && !imageAlreadySentInConversation && initialImageProcessed) {
                 imageAlreadySentInConversation = true
                 "<img>${currentImagePath}</img>$userMessageText"
             } else {
@@ -157,22 +174,11 @@ fun ChatScreen(
 
             coroutineScope.launch(Dispatchers.IO) {
                 try {
-                    chatSession.generate(formattedPrompt, progressListener)
+                    chatSession?.generate(formattedPrompt, progressListener)
                 } catch (e: Exception) {
-                    Log.e("ChatScreen", "Error during VLM generation", e)
-                    coroutineScope.launch(Dispatchers.Main) {
-                        chatMessages.add(
-                            ChatMessage(
-                                id = UUID.randomUUID().toString(),
-                                text = "Error: ${e.message}",
-                                sender = SENDER_MODEL,
-                                timestamp = System.currentTimeMillis()
-                            )
-                        )
-                    }
-                } finally {
-                    coroutineScope.launch(Dispatchers.Main) {
-                        isGenerating = false
+                    Log.e("ChatScreen", "Error during LLM prediction: ${e.message}", e)
+                    launch(Dispatchers.Main) {
+                        viewModel.addMessage("Error: ${e.message}", SENDER_MODEL)
                         progressListener.finalizeMessage()
                     }
                 }
@@ -183,7 +189,7 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (imagePath != null) "Chat with Image" else "Chat") },
+                title = { Text(viewModel.chatThread.collectAsState().value?.title ?: "Chat") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -192,12 +198,11 @@ fun ChatScreen(
             )
         },
         bottomBar = {
-            // Image display is now part of the LazyColumn
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(8.dp) // Apply padding for system bars here if needed, or rely on Scaffold's contentPadding
-                    .navigationBarsPadding(), // Add padding for the navigation bar
+                    .padding(8.dp)
+                    .navigationBarsPadding(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(
@@ -222,58 +227,95 @@ fun ChatScreen(
                 }
             }
         }
-    ) { contentPadding -> // contentPadding from Scaffold accounts for TopAppBar and BottomAppBar
+    ) { contentPadding ->
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(contentPadding) // Apply Scaffold's padding
-                // .navigationBarsPadding() // Apply here if bottomBar doesn't use it and items go behind nav bar
-                .padding(horizontal = 8.dp), // Additional horizontal padding for messages
+                .padding(contentPadding)
+                .padding(horizontal = 8.dp),
             reverseLayout = false
         ) {
-            // The image is now added directly to chatMessages list with SENDER_IMAGE type
-            items(chatMessages) { message ->
-                if (message.sender == SENDER_IMAGE) {
-                    ImageBubble(imagePath = message.text) // Pass imagePath from message text
-                } else {
-                    MessageBubble(message)
+            if (initialImageProcessed) {
+                currentChatImage?.imagePath?.let { path ->
+                    item("displayed_image") {
+                        ImageCard(imagePath = path)
+                    }
                 }
+            }
+
+            items(uiMessages, key = { it.id }) { message ->
+                MessageBubble(message = message, onRetry = {
+                    Log.d("ChatScreen", "Retry logic for message: ${message.text}")
+                    if (message.sender == SENDER_MODEL && inputText.text.isBlank()) {
+                        // Potentially find the user message that led to this error and resend
+                    } else if (message.sender == SENDER_USER) {
+                        val userMessageText = message.text
+                        isGenerating = true
+                        progressListener.finalizeMessage()
+
+                        val imagePathForRetry = currentChatImage?.imagePath
+                        val promptForRetry = if (imagePathForRetry != null && !imageAlreadySentInConversation) {
+                            "<img>${imagePathForRetry}</img>$userMessageText"
+                        } else {
+                            userMessageText
+                        }
+                        coroutineScope.launch(Dispatchers.IO) {
+                            try {
+                                chatSession?.generate(promptForRetry, progressListener)
+                            } catch (e: Exception) {
+                                Log.e("ChatScreen", "Error during LLM prediction on retry: ${e.message}", e)
+                                launch(Dispatchers.Main) {
+                                    viewModel.addMessage("Retry Error: ${e.message}", SENDER_MODEL)
+                                    progressListener.finalizeMessage()
+                                }
+                            }
+                        }
+                    }
+                })
             }
         }
     }
 }
 
 @Composable
-fun ImageBubble(imagePath: String) {
-    Box(
+fun ImageCard(imagePath: String) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp, horizontal = 8.dp) // Consistent padding
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant), // Neutral background
-        contentAlignment = Alignment.Center
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.Center
     ) {
-        Image(
-            painter = rememberAsyncImagePainter(
-                ImageRequest.Builder(LocalContext.current).data(data = File(imagePath)).apply(block = fun ImageRequest.Builder.() {
-                    crossfade(true)
-                    // placeholder(R.drawable.ic_launcher_foreground) // Replace with actual placeholder
-                    // error(R.drawable.ic_launcher_background) // Replace with actual error drawable
-                }).build()
-            ),
-            contentDescription = "Captured Image",
+        Card(
+            shape = RoundedCornerShape(12.dp),
             modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 250.dp) // Max height for the image bubble
-                .clip(RoundedCornerShape(12.dp)), // Clip image itself too
-            contentScale = ContentScale.Fit // Fit the image within bounds
-        )
+                .widthIn(max = 300.dp)
+                .padding(4.dp)
+        ) {
+            Image(
+                painter = rememberAsyncImagePainter(
+                    ImageRequest.Builder(LocalContext.current)
+                        .data(data = Uri.fromFile(File(imagePath)))
+                        .crossfade(true)
+                        .build()
+                ),
+                contentDescription = "Captured Image",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 150.dp, max = 300.dp)
+                    .clip(RoundedCornerShape(12.dp)),
+                contentScale = ContentScale.Crop
+            )
+        }
     }
 }
 
 @Composable
-fun MessageBubble(message: ChatMessage) {
+fun MessageBubble(message: com.example.mnn_llm_test.model.ChatMessage, onRetry: () -> Unit) {
+    if (message.sender == SENDER_IMAGE) {
+        return
+    }
+
     val bubbleColor = if (message.sender == SENDER_USER) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
     val textColor = if (message.sender == SENDER_USER) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
     val alignment = if (message.sender == SENDER_USER) Alignment.CenterEnd else Alignment.CenterStart

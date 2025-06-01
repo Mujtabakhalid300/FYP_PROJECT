@@ -4,16 +4,12 @@ sealed class Screen(val route: String) {
     object MainMenu : Screen("main_menu")
     object CameraView : Screen("camera_view")
     object ChatView : Screen("chat_view") {
-        fun routeWithArgs(imagePath: String? = null): String {
-            return if (imagePath != null) {
-                "chat_view?imagePath=$imagePath"
-            } else {
-                "chat_view"
-            }
+        fun routeWithArgs(threadId: Int): String {
+            return "chat_view?threadId=$threadId"
         }
-        const val imagePathArg = "imagePath" // For NavType argument name
+        const val threadIdArg = "threadId"
     }
 
     // Static route definition for NavHost
-    val chatViewRouteDefinition: String = "chat_view?imagePath={${ChatView.imagePathArg}}"
+    val chatViewRouteDefinition: String = "chat_view?threadId={${ChatView.threadIdArg}}"
 } 

@@ -63,21 +63,29 @@ fun AppNavigator(
                 CameraScreen(navController = navController /*, viewModel = cameraViewModel */)
             }
             composable(
-                route = Screen.MainMenu.chatViewRouteDefinition, // Use the definition from Screen object
-                arguments = listOf(navArgument(Screen.ChatView.imagePathArg) {
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
+                route = Screen.MainMenu.chatViewRouteDefinition, // Uses the updated definition from Screen object
+                arguments = listOf(navArgument(Screen.ChatView.threadIdArg) { // Changed to threadIdArg
+                    type = NavType.IntType // Changed to IntType
+                    // nullable = true // threadId should not be nullable for ChatScreen
+                    // defaultValue = null
                 })
             ) {
                 backStackEntry ->
-                val imagePathEncoded = backStackEntry.arguments?.getString(Screen.ChatView.imagePathArg)
-                val imagePathDecoded = imagePathEncoded?.let { Uri.decode(it) }
-                ChatScreen(
-                    navController = navController,
-                    chatSession = chatSessionState,
-                    imagePath = imagePathDecoded
-                )
+                val threadId = backStackEntry.arguments?.getInt(Screen.ChatView.threadIdArg)
+                // val imagePathEncoded = backStackEntry.arguments?.getString(Screen.ChatView.imagePathArg)
+                // val imagePathDecoded = imagePathEncoded?.let { Uri.decode(it) }
+                if (threadId != null) { // Ensure threadId is present
+                    ChatScreen(
+                        navController = navController,
+                        chatSession = chatSessionState,
+                        // imagePath = imagePathDecoded // Will be fetched via threadId
+                        threadId = threadId // Pass threadId
+                    )
+                } else {
+                    // Handle error: threadId is null. Maybe navigate back or show an error.
+                    Log.e("AppNavigator", "threadId is null for ChatScreen, navigating back.")
+                    navController.popBackStack()
+                }
             }
         }
     }

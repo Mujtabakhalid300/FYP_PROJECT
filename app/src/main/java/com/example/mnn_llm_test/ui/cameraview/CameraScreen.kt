@@ -49,6 +49,10 @@ import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
+import com.example.mnntest.ChatApplication
+import com.example.mnntest.data.ChatThread
+import com.example.mnntest.data.ChatThreadImage
+import java.sql.Timestamp
 
 // Filename format for captured images
 private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"
@@ -64,6 +68,7 @@ fun CameraScreen(
     val imageCaptureUseCase = remember { ImageCapture.Builder().build() }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     val coroutineScope = rememberCoroutineScope()
+    val chatRepository = (context.applicationContext as ChatApplication).repository
 
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -121,8 +126,26 @@ fun CameraScreen(
                     takePhoto(context, imageCaptureUseCase, cameraExecutor, coroutineScope) {filePath ->
                         if (filePath != null) {
                             Log.d("CameraScreen", "Photo captured: $filePath")
-                            val encodedFilePath = Uri.encode(filePath)
-                            navController.navigate("${Screen.ChatView.route}?imagePath=$encodedFilePath")
+                            coroutineScope.launch(Dispatchers.IO) {
+                                val newChatThread = ChatThread(
+                                    title = "Chat Session - ${System.currentTimeMillis()}",
+                                    systemPrompt = null,
+                                    createdAt = Timestamp(System.currentTimeMillis()),
+                                    updatedAt = Timestamp(System.currentTimeMillis())
+                                )
+                                val threadId = chatRepository.insertChatThread(newChatThread).toInt()
+
+                                val newChatImage = ChatThreadImage(
+                                    threadId = threadId,
+                                    imagePath = filePath,
+                                    createdAt = Timestamp(System.currentTimeMillis())
+                                )
+                                chatRepository.insertChatThreadImage(newChatImage)
+                                
+                                launch(Dispatchers.Main) {
+                                    navController.navigate(Screen.ChatView.routeWithArgs(threadId = threadId))
+                                }
+                            }
                         } else {
                             Log.e("CameraScreen", "Photo capture failed or file path is null")
                         }
