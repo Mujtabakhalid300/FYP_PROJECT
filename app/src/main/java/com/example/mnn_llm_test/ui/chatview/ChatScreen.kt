@@ -39,6 +39,8 @@ import com.example.mnntest.data.ChatThread
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import java.io.File
 import java.util.UUID
 import java.sql.Timestamp
@@ -78,6 +80,40 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     var imageAlreadySentInConversation by remember { mutableStateOf(false) }
     var initialImageProcessed by remember { mutableStateOf(false) }
+
+    // LaunchedEffect to set new chat history when threadId or chatSession changes
+    LaunchedEffect(key1 = threadId, key2 = chatSession) {
+        if (chatSession == null || chatSession.nativePtr == 0L) {
+            Log.w("ChatScreen", "ChatSession not available or not initialized. Cannot set history.")
+            return@LaunchedEffect
+        }
+        Log.d("ChatScreen", "LaunchedEffect for setNewChatHistory triggered. Thread ID: $threadId")
+
+        // Collect the messages from the ViewModel for the current threadId
+        // This assumes viewModel.messages updates when threadId changes its underlying data source.
+        // We use distinctUntilChanged to avoid re-processing if the list reference changes but content is same.
+        // However, since messages are already collected with collectAsState, we can just use that.
+        // The key point is to wait for messages for *this* threadId to be loaded.
+
+        // Convert UiChatMessage list to List<String> for the JNI call
+        // The roles (user/assistant) will be inferred by the JNI layer based on order.
+        val historyToSet = uiMessages.map { it.text } // Assuming uiMessages is now up-to-date for the current threadId
+
+        Log.d("ChatScreen", "Attempting to set new chat history for thread $threadId. History size: ${historyToSet.size}")
+        MnnLlmJni.setNewChatHistory(
+            llmPtr = chatSession.nativePtr,
+            newChatHistory = if (historyToSet.isEmpty() && threadId != 0) {
+                // If loading an existing thread that genuinely has no messages yet (rare), pass emptyList.
+                // If it's a truly new thread (e.g. threadId might be 0 or a special value indicating new),
+                // passing null or emptyList results in only system prompt, which is correct.
+                emptyList()
+            } else {
+                historyToSet
+            },
+            isR1Session = false // Defaulting this flag
+        )
+        Log.i("ChatScreen", "setNewChatHistory called for thread $threadId with ${historyToSet.size} messages.")
+    }
 
     LaunchedEffect(threadId, currentChatImage) {
         imageAlreadySentInConversation = false

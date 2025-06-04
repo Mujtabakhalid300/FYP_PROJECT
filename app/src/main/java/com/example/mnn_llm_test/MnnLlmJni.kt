@@ -42,6 +42,51 @@ object MnnLlmJni {
     // Release the native session
     external fun releaseNative(objecPtr: Long, isDiffusion: Boolean)
 
+    // Sets a new chat history, resetting the previous one
+    // Corresponds to JNI function: Java_com_example_mnn_1llm_1test_MnnLlmJni_setNewChatHistoryNative
+    external fun setNewChatHistoryNative(
+        llmPtr: Long,
+        newChatHistory: List<String>?, // Nullable to represent an empty history for new chats
+        isR1Session: Boolean
+    )
+
+    /**
+     * Sets a new chat history for the given LLM instance, effectively resetting
+     * the conversation to the provided history.
+     *
+     * This will clear the MNN engine's internal state (like KV cache) and then
+     * re-prime the conversation with the new history.
+     *
+     * @param llmPtr Pointer to the native LLM instance.
+     * @param newChatHistory A list of strings representing the new chat history.
+     *                       Each string is a message. Assumes alternating user/assistant roles
+     *                       starting with user if the list is populated.
+     *                       Pass null or an empty list to start a truly fresh chat (only system prompt).
+     * @param isR1Session A flag, usage determined by native implementation (currently logged).
+     */
+    fun setNewChatHistory(
+        llmPtr: Long,
+        newChatHistory: List<String>?,
+        isR1Session: Boolean
+    ) {
+        if (llmPtr == 0L) {
+            Log.w("MnnLlmJni", "LLM Pointer is 0, cannot set new chat history. Model not initialized or already released.")
+            return
+        }
+        try {
+            setNewChatHistoryNative(llmPtr, newChatHistory, isR1Session)
+            Log.i("MnnLlmJni", "Successfully set new chat history. New history size: ${newChatHistory?.size ?: 0}, R1: $isR1Session")
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e("MnnLlmJni", "Failed to call setNewChatHistoryNative: UnsatisfiedLinkError. Ensure JNI function name matches C++.", e)
+            // Potentially rethrow or handle as a critical error
+            throw e
+        } catch (e: Exception) {
+            Log.e("MnnLlmJni", "Exception when calling setNewChatHistoryNative.", e)
+            // Potentially rethrow or handle
+            throw e
+        }
+    }
+
     // Helper class to handle model session data
     class ChatSession(
         val sessionId: String,
@@ -51,7 +96,10 @@ object MnnLlmJni {
         private val isDiffusion: Boolean = false
     ) {
 
-        private var nativePtr: Long = 0
+        private var _nativePtr: Long = 0
+        val nativePtr: Long
+            get() = _nativePtr
+
         private var mGenerating = false
         private var mReleaseRequeted = false
         private var keepHistory = true
@@ -62,8 +110,8 @@ object MnnLlmJni {
 
         private fun load() {
             val historyList = savedHistory ?: emptyList()
-            nativePtr = initNative(configPath, useTmpPath, savedHistory, isDiffusion)
-            Log.d("NativeLog", "Native Pointer: $nativePtr")
+            _nativePtr = initNative(configPath, useTmpPath, savedHistory, isDiffusion)
+            Log.d("NativeLog", "Native Pointer: $_nativePtr")
         }
 
         // Handle generation process
@@ -120,9 +168,9 @@ object MnnLlmJni {
 
         // Internal function to release the native session
         private fun releaseInner() {
-            if (nativePtr > 0) {
-                releaseNative(nativePtr, isDiffusion)
-                nativePtr = 0
+            if (_nativePtr > 0) {
+                releaseNative(_nativePtr, isDiffusion)
+                _nativePtr = 0
             }
         }
 

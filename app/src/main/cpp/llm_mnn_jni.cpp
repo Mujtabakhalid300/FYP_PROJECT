@@ -479,7 +479,7 @@ Java_com_example_mnn_1llm_1test_MnnLlmJni_submitDiffusionNative(JNIEnv *env, job
     return hashMap;
 }
 
-JNIEXPORT void JNICALL Java_com_your_package_ChatSession_setNewChatHistoryNative(
+JNIEXPORT void JNICALL Java_com_example_mnn_1llm_1test_MnnLlmJni_setNewChatHistoryNative(
                                                                 JNIEnv* env,
                                                                 jobject thiz, /* this is the JNI object instance */
                                                                 jlong llmPtr,
