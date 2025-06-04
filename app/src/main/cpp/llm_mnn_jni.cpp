@@ -97,6 +97,66 @@ JNIEXPORT void JNI_OnUnload(JavaVM* vm, void* reserved) {
     __android_log_print(ANDROID_LOG_DEBUG, "MNN_DEBUG", "JNI_OnUnload");
 }
 
+// Helper function to update the JNI-side C++ history vector
+static bool updateJniHistoryVector(JNIEnv* env, jobject new_java_chat_history, bool is_r1_session_flag) {
+    MNN_DEBUG("Updating JNI history vector. is_r1_session_flag: %d", is_r1_session_flag);
+    history.clear();
+    MNN_DEBUG("Cleared existing history.");
+
+    // Add the standard system prompt (as seen in initNative)
+    history.emplace_back("system", "You are a helpful assistant in a mobile app designed for visually impaired users. Responses will be read aloud using text-to-speech, so keep them short, clear, and easy to understand. Avoid unnecessary details or long sentences. Be direct and helpful, using everyday language.");
+    MNN_DEBUG("System prompt added.");
+
+    // Process new_java_chat_history (List<String>)
+    if (new_java_chat_history == nullptr) {
+        MNN_DEBUG("New Java chat history is null. History will only contain system prompt.");
+        return true; // Successfully set history (to system prompt only)
+    }
+
+    jclass listClass = env->GetObjectClass(new_java_chat_history);
+    if (!listClass) {
+        MNN_DEBUG("Error: Failed to get class for new_java_chat_history.");
+        return false; // Indicate failure
+    }
+
+    jmethodID sizeMethod = env->GetMethodID(listClass, "size", "()I");
+    jmethodID getMethod = env->GetMethodID(listClass, "get", "(I)Ljava/lang/Object;");
+
+    if (!sizeMethod || !getMethod) {
+        MNN_DEBUG("Error: Failed to get size/get methods for List.");
+        env->DeleteLocalRef(listClass);
+        return false; // Indicate failure
+    }
+
+    jint listSize = env->CallIntMethod(new_java_chat_history, sizeMethod);
+    MNN_DEBUG("New Java chat history size: %d", listSize);
+
+    for (jint i = 0; i < listSize; ++i) {
+        jstring javaString = (jstring)env->CallObjectMethod(new_java_chat_history, getMethod, i);
+        if (javaString == nullptr) {
+            MNN_DEBUG("Warning: Null string element in new_java_chat_history at index %d. Skipping.", i);
+            // Potentially return false or handle as a non-critical issue. For now, skipping is fine.
+            continue;
+        }
+
+        const char* cStr = env->GetStringUTFChars(javaString, nullptr);
+        std::string content = cStr;
+        env->ReleaseStringUTFChars(javaString, cStr);
+
+        // Assign roles: assuming alternating roles, starting with "user" for the items in new_java_chat_history.
+        std::string role = (i % 2 == 0) ? "user" : "assistant";
+
+        history.emplace_back(role, content);
+        MNN_DEBUG("Added to history: Role='%s', Content Snippet='%.50s...'", role.c_str(), content.substr(0, 50).c_str());
+
+        env->DeleteLocalRef(javaString);
+    }
+
+    env->DeleteLocalRef(listClass);
+    MNN_DEBUG("Finished updating JNI history vector. Total entries: %zu", history.size());
+    return true; // Indicate success
+}
+
 JNIEXPORT jlong JNICALL Java_com_example_mnn_1llm_1test_MnnLlmJni_initNative(JNIEnv* env, jobject thiz,
                                                                              jstring modelDir,
                                                                              jboolean use_tmp_path,
@@ -172,50 +232,16 @@ JNIEXPORT jlong JNICALL Java_com_example_mnn_1llm_1test_MnnLlmJni_initNative(JNI
         MNN_DEBUG("Skipping temporary directory configuration (use_tmp_path is false)");
     }
 
-    MNN_DEBUG("Initializing conversation history");
-    history.clear();
-    history.emplace_back("system", "You are a helpful assistant in a mobile app designed for visually impaired users. Responses will be read aloud using text-to-speech, so keep them short, clear, and easy to understand. Avoid unnecessary details or long sentences. Be direct and helpful, using everyday language.");
-    MNN_DEBUG("System prompt added to history");
-
-    if (chat_history != nullptr) {
-        MNN_DEBUG("Processing existing chat history");
-        jclass listClass = env->GetObjectClass(chat_history);
-        if (!listClass) {
-            MNN_DEBUG("Error: Failed to get chat history class");
-            env->ReleaseStringUTFChars(modelDir, model_dir);
-            return 0;
-        }
-
-        jmethodID sizeMethod = env->GetMethodID(listClass, "size", "()I");
-        jmethodID getMethod = env->GetMethodID(listClass, "get", "(I)Ljava/lang/Object;");
-
-        if (!sizeMethod || !getMethod) {
-            MNN_DEBUG("Error: Failed to get chat history methods");
-            env->ReleaseStringUTFChars(modelDir, model_dir);
-            return 0;
-        }
-
-        jint listSize = env->CallIntMethod(chat_history, sizeMethod);
-        MNN_DEBUG("Chat history size: %d", listSize);
-
-        for (jint i = 0; i < listSize; i++) {
-            jobject element = env->CallObjectMethod(chat_history, getMethod, i);
-            if (!element) {
-                MNN_DEBUG("Error: Null element at index %d", i);
-                continue;
-            }
-
-            const char *elementCStr = env->GetStringUTFChars((jstring)element, nullptr);
-            std::string role = (i == 0) ? "user" : "assistant";
-            MNN_DEBUG("Adding history entry %d - Role: %s, Content: %s", i, role.c_str(), elementCStr);
-
-            history.emplace_back(role, elementCStr);
-            env->ReleaseStringUTFChars((jstring)element, elementCStr);
-            env->DeleteLocalRef(element);
-        }
-    } else {
-        MNN_DEBUG("No existing chat history provided");
+    MNN_DEBUG("Initializing conversation history using helper function...");
+    // Pass false for is_r1_session_flag as it's not applicable/defined for initNative's context
+    if (!updateJniHistoryVector(env, chat_history, false)) {
+        MNN_DEBUG("Error: Failed to update JNI history vector during initNative.");
+        // llm instance was created, so it should be deleted before returning an error.
+        delete llm; // Clean up allocated Llm instance
+        env->ReleaseStringUTFChars(modelDir, model_dir);
+        return 0; // Indicate failure
     }
+    MNN_DEBUG("Conversation history initialized successfully.");
 
     MNN_DEBUG("Loading model...");
     try {
@@ -451,5 +477,53 @@ Java_com_example_mnn_1llm_1test_MnnLlmJni_submitDiffusionNative(JNIEnv *env, job
     jobject hashMap = env->NewObject(hashMapClass, hashMapInit);
     env->CallObjectMethod(hashMap, putMethod, env->NewStringUTF("total_timeus"), env->NewObject(env->FindClass("java/lang/Long"), env->GetMethodID(env->FindClass("java/lang/Long"), "<init>", "(J)V"), duration));
     return hashMap;
+}
+
+JNIEXPORT void JNICALL Java_com_your_package_ChatSession_setNewChatHistoryNative(
+                                                                JNIEnv* env,
+                                                                jobject thiz, /* this is the JNI object instance */
+                                                                jlong llmPtr,
+                                                                jobject new_java_chat_history, /* Java List<String> */
+                                                                jboolean is_r1_session_flag_jni) {
+    MNN_DEBUG("=== setNewChatHistoryNative Start ===");
+    Llm* llm = reinterpret_cast<Llm*>(llmPtr);
+
+    if (!llm) {
+        MNN_DEBUG("Error: llmPtr is null in setNewChatHistoryNative.");
+        // Optionally, throw a Java exception
+        // jclass exClass = env->FindClass("java/lang/IllegalStateException");
+        // if (exClass != nullptr) {
+        //     env->ThrowNew(exClass, "LLM native pointer is null.");
+        //     env->DeleteLocalRef(exClass); // Clean up local ref
+        // }
+        return;
+    }
+    MNN_DEBUG("llmPtr successfully cast to Llm*.");
+
+    // 1. Reset the MNN Llm engine's internal conversational state.
+    MNN_DEBUG("Calling llm->reset()...");
+    try {
+        llm->reset();
+        MNN_DEBUG("llm->reset() completed.");
+    } catch (const std::exception& e) {
+        MNN_DEBUG("Exception during llm->reset(): %s", e.what());
+        // Handle or rethrow if necessary, possibly as a Java exception
+        // jclass exClass = env->FindClass("java/lang/RuntimeException");
+        // if (exClass != nullptr) {
+        //    std::string errorMsg = "Exception during llm->reset(): ";
+        //    errorMsg += e.what();
+        //    env->ThrowNew(exClass, errorMsg.c_str());
+        //    env->DeleteLocalRef(exClass); // Clean up local ref
+        // }
+        return; // Or handle error differently
+    }
+
+
+    // 2. Update the JNI-side C++ 'history' vector with the new context.
+    bool is_r1_session_flag = (bool)is_r1_session_flag_jni;
+    MNN_DEBUG("Calling updateJniHistoryVector. is_r1_session_flag: %d", is_r1_session_flag);
+    updateJniHistoryVector(env, new_java_chat_history, is_r1_session_flag);
+
+    MNN_DEBUG("=== setNewChatHistoryNative End ===");
 }
 }
