@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -241,25 +242,75 @@ fun ChatScreen(
                 } else {
                     LazyColumn {
                         items(allThreads, key = { it.id }) { thread ->
-                            NavigationDrawerItem(
-                                label = { Text(thread.title ?: "Chat ${thread.id}") },
-                                selected = thread.id == threadId, // Highlight current thread
-                                onClick = {
-                                    coroutineScope.launch {
-                                        drawerState.close()
-                                        if (thread.id != threadId) { // Avoid navigating to the same screen
-                                            navController.navigate(Screen.ChatView.routeWithArgs(threadId = thread.id)) {
-                                                // Clear back stack up to the start destination and launch as single top
-                                                popUpTo(navController.graph.startDestinationId) {
-                                                    inclusive = false
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(NavigationDrawerItemDefaults.ItemPadding),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                NavigationDrawerItem(
+                                    label = { Text(thread.title ?: "Chat ${thread.id}") },
+                                    selected = thread.id == threadId, // Highlight current thread
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            drawerState.close()
+                                            if (thread.id != threadId) { // Avoid navigating to the same screen
+                                                navController.navigate(Screen.ChatView.routeWithArgs(threadId = thread.id)) {
+                                                    // Clear back stack up to the start destination and launch as single top
+                                                    popUpTo(navController.graph.startDestinationId) {
+                                                        inclusive = false
+                                                    }
+                                                    launchSingleTop = true
                                                 }
-                                                launchSingleTop = true
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                // Delete button for each thread
+                                IconButton(
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            drawerState.close()
+                                            
+                                            // Handle deletion logic
+                                            val deleteSuccess = viewModel.deleteThread(thread.id)
+                                            if (deleteSuccess) {
+                                                if (thread.id == threadId) {
+                                                    // Current thread is being deleted, find next available thread
+                                                    val nextThreadId = viewModel.getNextAvailableThreadId(thread.id)
+                                                    if (nextThreadId != null) {
+                                                        // Navigate to next available thread
+                                                        navController.navigate(Screen.ChatView.routeWithArgs(threadId = nextThreadId)) {
+                                                            popUpTo(navController.graph.startDestinationId) {
+                                                                inclusive = false
+                                                            }
+                                                            launchSingleTop = true
+                                                        }
+                                                    } else {
+                                                        // No more threads, navigate to main menu
+                                                        navController.navigate(Screen.MainMenu.route) {
+                                                            popUpTo(navController.graph.startDestinationId) {
+                                                                inclusive = false
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                // If deleting a different thread (not current), stay on current screen
+                                            } else {
+                                                // Handle delete failure if needed
+                                                Log.e("ChatScreen", "Failed to delete thread ${thread.id}")
                                             }
                                         }
                                     }
-                                },
-                                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-                            )
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Delete,
+                                        contentDescription = "Delete Chat ${thread.title ?: thread.id}",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
                         }
                     }
                 }

@@ -9,6 +9,7 @@ import com.example.mnntest.data.ChatThread
 import com.example.mnntest.data.ChatThreadImage
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -68,6 +69,31 @@ class ChatViewModel(private val repository: ChatRepository, val threadId: Int) :
         viewModelScope.launch {
             repository.updateChatMessageText(messageIdToUpdate, newText, Timestamp(System.currentTimeMillis()))
         }
+    }
+
+    /**
+     * Deletes a chat thread by its ID. This will cascade to delete associated messages and images.
+     * @param threadIdToDelete The ID of the thread to delete
+     * @return Boolean indicating if the deletion was successful
+     */
+    suspend fun deleteThread(threadIdToDelete: Int): Boolean {
+        return try {
+            repository.deleteChatThreadById(threadIdToDelete)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Gets the next available thread ID after deleting the current one.
+     * Returns null if no threads exist.
+     */
+    suspend fun getNextAvailableThreadId(excludeThreadId: Int): Int? {
+        val allThreads = repository.getAllChatThreads().firstOrNull() ?: return null
+        return allThreads.filter { it.id != excludeThreadId }
+            .sortedByDescending { it.updatedAt }
+            .firstOrNull()?.id
     }
 }
 

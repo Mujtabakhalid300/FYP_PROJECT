@@ -14,6 +14,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,6 +35,10 @@ fun MainMenuScreen(navController: NavHostController) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val chatRepository = (context.applicationContext as ChatApplication).repository
+    
+    // Observe available chat threads to determine if "Open Chat" should be enabled
+    val allChatThreads by chatRepository.getAllChatThreads().collectAsState(initial = emptyList())
+    val hasExistingChats = allChatThreads.isNotEmpty()
 
     Scaffold(
         topBar = {
@@ -54,25 +60,21 @@ fun MainMenuScreen(navController: NavHostController) {
                 Text("Open Camera")
             }
             Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = {
-                coroutineScope.launch {
-                    val latestThread = chatRepository.getAllChatThreads().firstOrNull()?.firstOrNull()
-                    if (latestThread != null) {
-                        navController.navigate(Screen.ChatView.routeWithArgs(threadId = latestThread.id))
-                    } else {
-                        // No existing chats, create a new one
-                        val newChatThread = ChatThread(
-                            title = "New Chat - ${System.currentTimeMillis()}", // Default title for new chat
-                            systemPrompt = null,
-                            createdAt = Timestamp(System.currentTimeMillis()),
-                            updatedAt = Timestamp(System.currentTimeMillis())
-                        )
-                        val newThreadId = chatRepository.insertChatThread(newChatThread).toInt()
-                        navController.navigate(Screen.ChatView.routeWithArgs(threadId = newThreadId))
+            Button(
+                onClick = {
+                    if (hasExistingChats) {
+                        coroutineScope.launch {
+                            val latestThread = allChatThreads.firstOrNull()
+                            if (latestThread != null) {
+                                navController.navigate(Screen.ChatView.routeWithArgs(threadId = latestThread.id))
+                            }
+                        }
                     }
-                }
-            }) {
-                Text("Open Chat")
+                    // If no existing chats, button is disabled, so this won't execute
+                },
+                enabled = hasExistingChats // Enable only if chats exist
+            ) {
+                Text(if (hasExistingChats) "Open Chat" else "No Chats Available")
             }
         }
     }
