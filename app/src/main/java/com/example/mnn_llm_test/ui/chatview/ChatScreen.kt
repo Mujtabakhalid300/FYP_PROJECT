@@ -15,8 +15,10 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,6 +39,7 @@ import com.example.mnn_llm_test.ui.chatview.ChatViewModel
 import com.example.mnn_llm_test.ui.chatview.ChatViewModelFactory
 import com.example.mnntest.ChatApplication
 import com.example.mnntest.data.ChatThread
+import com.example.mnn_llm_test.VoskHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -82,7 +85,38 @@ fun ChatScreen(
     var imageAlreadySentInConversation by remember { mutableStateOf(false) }
     var initialImageProcessed by remember { mutableStateOf(false) }
 
-    // LaunchedEffect to set new chat history when threadId or chatSession changes
+    // Vosk STT State
+    var isVoskInitialized by remember { mutableStateOf(false) }
+    var isRecording by remember { mutableStateOf(false) }
+    val voskHelper = remember(context) {
+        VoskHelper(
+            context = context,
+            onFinalTranscription = {
+                inputText = TextFieldValue(inputText.text + " " + it)
+                isRecording = false
+            },
+            onError = {
+                Log.e("VoskHelper", "Vosk Error: $it")
+                isRecording = false
+            }
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        Log.d("ChatScreen", "Attempting to initialize Vosk model...")
+        voskHelper.initModel()
+        isVoskInitialized = true
+        Log.d("ChatScreen", "Vosk model initialization sequence started.")
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            if (isRecording) {
+                voskHelper.stopRecording()
+            }
+        }
+    }
+
     LaunchedEffect(key1 = threadId, key2 = chatSession) {
         if (chatSession == null || chatSession.nativePtr == 0L) {
             Log.w("ChatScreen", "ChatSession not available or not initialized. Cannot set history.")
@@ -346,9 +380,22 @@ fun ChatScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     IconButton(onClick = {
-                        Log.d("ChatScreen", "Mic button pressed")
-                    }, enabled = !isGenerating) {
-                        Icon(Icons.Default.Mic, contentDescription = "Record Audio")
+                        if (isVoskInitialized) {
+                            if (isRecording) {
+                                voskHelper.stopRecording()
+                                isRecording = false
+                                Log.d("ChatScreen", "Stopped Vosk recording.")
+                            } else {
+                                voskHelper.startRecording()
+                                isRecording = true
+                                Log.d("ChatScreen", "Started Vosk recording.")
+                            }
+                        }
+                    }, enabled = !isGenerating && isVoskInitialized) {
+                        Icon(
+                            imageVector = if (isRecording) Icons.Filled.Stop else Icons.Default.Mic,
+                            contentDescription = if (isRecording) "Stop Recording" else "Record Audio"
+                        )
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
