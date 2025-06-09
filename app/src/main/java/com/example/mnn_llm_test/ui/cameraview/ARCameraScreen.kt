@@ -237,12 +237,13 @@ fun ARCameraView(
                     Log.e("ARCameraView", "ARCore threw an exception", exception)
                 }
                 
-                // Configure session features including depth estimation
+                // Configure session features including depth estimation and autofocus
                 arCoreSessionHelper.beforeSessionResume = { session ->
                     session.configure(
                         session.config.apply {
                             depthMode = Config.DepthMode.AUTOMATIC
                             instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
+                            focusMode = Config.FocusMode.AUTO
                         }
                     )
                 }

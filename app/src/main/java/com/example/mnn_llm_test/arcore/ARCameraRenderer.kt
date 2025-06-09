@@ -262,9 +262,9 @@ class ARCameraRenderer(
                 val bitmap = frameProcessor.frameToBitmap(frame)
                 if (bitmap != null) {
                     // Save YOLO input image for debugging (every 10th detection frame)
-                    if (frameCounter % (detectionInterval * 10) == 0) {
-                        saveYoloInputImage(bitmap)
-                    }
+                    // if (frameCounter % (detectionInterval * 10) == 0) {
+                    //     saveYoloInputImage(bitmap)
+                    // }
                     
                     val detections = liteRTDetector.detectObjects(bitmap)
                     
