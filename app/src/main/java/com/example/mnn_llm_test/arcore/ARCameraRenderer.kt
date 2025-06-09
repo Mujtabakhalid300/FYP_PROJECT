@@ -26,6 +26,9 @@ class ARCameraRenderer(
     private val onCaptureCallback: (Bitmap?) -> Unit
 ) : SampleRender.Renderer, DefaultLifecycleObserver {
     
+    // Callback for detection updates
+    var onDetectionUpdate: ((List<DetectionWithDepth>) -> Unit)? = null
+    
     companion object {
         private const val TAG = "ARCameraRenderer"
         private const val Z_NEAR = 0.1f
@@ -264,6 +267,9 @@ class ARCameraRenderer(
                         withContext(Dispatchers.Main) {
                             currentDetectionResults = detectionsWithDepth
                             
+                            // Update overlay with detection results
+                            onDetectionUpdate?.invoke(detectionsWithDepth)
+                            
                             // Enhanced logging for debugging
                             Log.d(TAG, "🎯 Detected ${detections.size} objects with depth info:")
                             detectionsWithDepth.forEachIndexed { index, detectionWithDepth ->
@@ -277,6 +283,10 @@ class ARCameraRenderer(
                     } else {
                         withContext(Dispatchers.Main) {
                             currentDetectionResults = null
+                            
+                            // Clear overlay
+                            onDetectionUpdate?.invoke(emptyList())
+                            
                             // Log when no objects detected (less frequently to avoid spam)
                             if (frameCounter % 60 == 0) {
                                 Log.d(TAG, "🔍 No objects detected in current frame")

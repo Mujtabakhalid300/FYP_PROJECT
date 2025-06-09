@@ -18,6 +18,7 @@ package com.example.mnn_llm_test.arcore
 import android.content.Context
 import android.graphics.*
 import android.util.AttributeSet
+import android.util.Log
 import android.view.View
 import com.example.mnn_llm_test.arcore.ml.LiteRTYoloDetector
 
@@ -78,11 +79,30 @@ class BoundingBoxOverlay @JvmOverloads constructor(
             val detection = detectionWithDepth.detection
             val distance = detectionWithDepth.distance
             
+            // Since the camera frame was rotated 90° for YOLO processing,
+            // we need to inverse-transform the coordinates back to screen space
+            // The YOLO model receives portrait-rotated input, but the overlay is in portrait orientation
+            
+            // Apply coordinate transformation for 90° rotation compensation
+            val transformedX = detection.y
+            val transformedY = 1.0f - (detection.x + detection.width)
+            val transformedWidth = detection.height
+            val transformedHeight = detection.width
+            
             // Convert normalized coordinates [0,1] to screen coordinates
-            val left = detection.x * viewWidth
-            val top = detection.y * viewHeight
-            val right = (detection.x + detection.width) * viewWidth
-            val bottom = (detection.y + detection.height) * viewHeight
+            val left = transformedX * viewWidth
+            val top = transformedY * viewHeight
+            val right = (transformedX + transformedWidth) * viewWidth
+            val bottom = (transformedY + transformedHeight) * viewHeight
+            
+            // Debug coordinate transformation
+            Log.d("BoundingBoxOverlay", 
+                "Drawing detection: ${detection.className} " +
+                "original norm coords: (${detection.x}, ${detection.y}, ${detection.width}, ${detection.height}) " +
+                "transformed coords: ($transformedX, $transformedY, $transformedWidth, $transformedHeight) " +
+                "screen coords: ($left, $top, $right, $bottom) " +
+                "view size: ${viewWidth}x${viewHeight}")
+        
             
             // Draw bounding box
             canvas.drawRect(left, top, right, bottom, boundingBoxPaint)
