@@ -189,17 +189,29 @@ class LiteRTYoloDetector(private val context: Context) {
                 refreshBuffers()
             }
             
+            // Check if buffers are still available after refresh
+            if (inputBuffer == null || outputBuffer == null) {
+                Log.w(TAG, "❌ Buffers not properly initialized after refresh")
+                return@withContext emptyList<Detection>()
+            }
+            
             preprocessImage(bitmap)
             runInference()
-            parseResults()
+            return@withContext parseResults()
             
         } catch (e: Exception) {
             Log.e(TAG, "Error during detection", e)
-            emptyList()
+            return@withContext emptyList()
         }
     }
     
     private fun preprocessImage(bitmap: Bitmap) {
+        // Check if buffers are properly initialized
+        if (inputBuffer == null) {
+            Log.w(TAG, "❌ Input buffer is null, skipping preprocessing")
+            return
+        }
+        
         Log.d(TAG, "📸 Preprocessing frame $inferenceCount - Input: ${bitmap.width}x${bitmap.height} -> Output: ${INPUT_SIZE}x${INPUT_SIZE}")
         
         // Create letterboxed image with proper aspect ratio

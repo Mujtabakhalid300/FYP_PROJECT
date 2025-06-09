@@ -51,6 +51,14 @@ class FrameProcessor {
             }
             
             bitmap
+        } catch (e: com.google.ar.core.exceptions.DeadlineExceededException) {
+            // Session is pausing/stopping, this is expected during navigation
+            Log.d(TAG, "Frame acquisition timed out - session likely pausing")
+            null
+        } catch (e: com.google.ar.core.exceptions.NotYetAvailableException) {
+            // Frame not yet available, skip this frame
+            Log.d(TAG, "Frame not yet available, skipping")
+            null
         } catch (e: Exception) {
             Log.e(TAG, "Error converting frame to bitmap", e)
             null

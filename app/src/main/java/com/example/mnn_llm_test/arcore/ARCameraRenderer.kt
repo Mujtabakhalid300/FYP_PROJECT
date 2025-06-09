@@ -103,18 +103,34 @@ class ARCameraRenderer(
     override fun onPause(owner: LifecycleOwner) {
         displayRotationHelper.onPause()
         
+        Log.d(TAG, "⏸️ AR Camera pausing - starting cleanup")
+        
+        // Immediately mark detector as uninitialized to stop new detections
+        isDetectorInitialized = false
+        
         // Clear detection state
         currentDetectionResults = null
         currentDepthData = null
+        currentFrame = null
         
-        // Clean up detector
+        // Cancel detector scope and wait a bit for cleanup
         detectorScope.cancel()
-        if (::liteRTDetector.isInitialized) {
-            liteRTDetector.close()
-            isDetectorInitialized = false
+        
+        // Clear overlay
+        mainHandler.post {
+            onDetectionUpdate?.invoke(emptyList())
         }
         
-        Log.d(TAG, "⏸️ AR Camera paused - detector cleanup complete")
+        // Clean up detector
+        if (::liteRTDetector.isInitialized) {
+            try {
+                liteRTDetector.close()
+            } catch (e: Exception) {
+                Log.w(TAG, "Error closing detector: ${e.message}")
+            }
+        }
+        
+        Log.d(TAG, "✅ AR Camera paused - detector cleanup complete")
     }
 
     /**
@@ -251,7 +267,7 @@ class ARCameraRenderer(
      */
     private fun processObjectDetection(frame: Frame) {
         frameCounter++
-        if (frameCounter % detectionInterval != 0 || !isDetectorInitialized) {
+        if (frameCounter % detectionInterval != 0 || !isDetectorInitialized || !detectorScope.isActive) {
             return
         }
 
@@ -259,8 +275,11 @@ class ARCameraRenderer(
 
         detectorScope.launch {
             try {
+                // Check if scope is still active before processing
+                if (!isActive) return@launch
+                
                 val bitmap = frameProcessor.frameToBitmap(frame)
-                if (bitmap != null) {
+                if (bitmap != null && isActive) {
                     // Save YOLO input image for debugging (every 10th detection frame)
                     // if (frameCounter % (detectionInterval * 10) == 0) {
                     //     saveYoloInputImage(bitmap)
@@ -268,7 +287,7 @@ class ARCameraRenderer(
                     
                     val detections = liteRTDetector.detectObjects(bitmap)
                     
-                    if (detections.isNotEmpty()) {
+                    if (detections.isNotEmpty() && isActive) {
                         val depthInfo = getDepthInfoForDetections(detections, depthDataSnapshot)
                         
                         val detectionsWithDepth = detections.mapIndexed { index, detection ->
@@ -277,10 +296,11 @@ class ARCameraRenderer(
                         }
                         
                         withContext(Dispatchers.Main) {
-                            currentDetectionResults = detectionsWithDepth
-                            
-                            // Update overlay callback if provided
-                            onDetectionUpdate?.invoke(detectionsWithDepth)
+                            if (isActive) {
+                                currentDetectionResults = detectionsWithDepth
+                                
+                                // Update overlay callback if provided
+                                onDetectionUpdate?.invoke(detectionsWithDepth)
                             
                             // Enhanced logging for debugging
                             Log.d(TAG, "🎯 Detected ${detections.size} objects with depth info:")
@@ -291,15 +311,18 @@ class ARCameraRenderer(
                                           "at distance: ${distance}mm (${String.format("%.1f", distance / 1000.0)}m) " +
                                           "bbox: [${detection.x.toInt()}, ${detection.y.toInt()}, ${detection.width.toInt()}, ${detection.height.toInt()}]")
                             }
+                            }
                         }
                     } else {
                         withContext(Dispatchers.Main) {
-                            currentDetectionResults = null
-                            onDetectionUpdate?.invoke(emptyList())
-                            
-                            // Log when no objects detected (less frequently to avoid spam)
-                            if (frameCounter % 60 == 0) {
-                                Log.d(TAG, "🔍 No objects detected in current frame")
+                            if (isActive) {
+                                currentDetectionResults = null
+                                onDetectionUpdate?.invoke(emptyList())
+                                
+                                // Log when no objects detected (less frequently to avoid spam)
+                                if (frameCounter % 60 == 0) {
+                                    Log.d(TAG, "🔍 No objects detected in current frame")
+                                }
                             }
                         }
                     }
@@ -307,7 +330,10 @@ class ARCameraRenderer(
                     bitmap.recycle()
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Detection error: ${e.message}")
+                // Only log if it's not a cancellation (which is expected during cleanup)
+                if (e !is kotlinx.coroutines.CancellationException && isActive) {
+                    Log.e(TAG, "Detection error: ${e.message}")
+                }
             }
         }
     }
