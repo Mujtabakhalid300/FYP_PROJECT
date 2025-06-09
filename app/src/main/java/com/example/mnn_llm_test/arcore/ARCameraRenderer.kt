@@ -51,6 +51,9 @@ class ARCameraRenderer(
     private val mainHandler = Handler(Looper.getMainLooper())
     private var currentDetectionResults: List<DetectionWithDepth>? = null
     
+    // Current frame for capture
+    private var currentFrame: Frame? = null
+    
     // Capture state
     private var shouldCapture = false
 
@@ -180,6 +183,9 @@ class ARCameraRenderer(
             Log.e(TAG, "Unexpected error during session update", e)
             return
         }
+
+        // Store current frame for capture
+        currentFrame = frame
 
         val camera = frame.camera
 
@@ -343,42 +349,35 @@ class ARCameraRenderer(
     }
 
     /**
-     * Capture current frame as bitmap
+     * Capture current frame as bitmap using ARCore camera frame
      */
     private fun captureFrame() {
         try {
-            // Get surface dimensions from OpenGL viewport
-            val viewport = IntArray(4)
-            GLES20.glGetIntegerv(GLES20.GL_VIEWPORT, viewport, 0)
-            val width = viewport[2]
-            val height = viewport[3]
+            Log.d(TAG, "📸 Capturing ARCore camera frame...")
             
-            val buffer = ByteBuffer.allocateDirect(width * height * 4)
-            GLES20.glReadPixels(0, 0, width, height, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, buffer)
-            
-            val pixelArray = IntArray(width * height)
-            buffer.rewind()
-            
-            for (y in 0 until height) {
-                for (x in 0 until width) {
-                    val r = buffer.get().toInt() and 0xFF
-                    val g = buffer.get().toInt() and 0xFF
-                    val b = buffer.get().toInt() and 0xFF
-                    val a = buffer.get().toInt() and 0xFF
-                    
-                    val flippedY = height - 1 - y
-                    pixelArray[flippedY * width + x] = (a shl 24) or (r shl 16) or (g shl 8) or b
+            // Use the current frame that's being processed
+            currentFrame?.let { frame ->
+                val bitmap = frameProcessor.frameToBitmap(frame)
+                if (bitmap != null) {
+                    Log.d(TAG, "✅ Successfully captured camera frame: ${bitmap.width}x${bitmap.height}")
+                    mainHandler.post {
+                        onCaptureCallback(bitmap)
+                    }
+                } else {
+                    Log.e(TAG, "❌ Failed to convert frame to bitmap")
+                    mainHandler.post {
+                        onCaptureCallback(null)
+                    }
+                }
+            } ?: run {
+                Log.e(TAG, "❌ No current frame available for capture")
+                mainHandler.post {
+                    onCaptureCallback(null)
                 }
             }
             
-            val bitmap = Bitmap.createBitmap(pixelArray, width, height, Bitmap.Config.ARGB_8888)
-            
-            mainHandler.post {
-                onCaptureCallback(bitmap)
-            }
-            
         } catch (e: Exception) {
-            Log.e(TAG, "Error capturing frame", e)
+            Log.e(TAG, "❌ Error capturing frame", e)
             mainHandler.post {
                 onCaptureCallback(null)
             }
