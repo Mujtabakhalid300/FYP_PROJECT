@@ -22,6 +22,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import android.widget.FrameLayout
+import android.view.ViewGroup
+import com.example.mnn_llm_test.arcore.BoundingBoxOverlay
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -177,96 +180,100 @@ fun ARCameraView(
     onCapture: (Bitmap?) -> Unit,
     onArCoreSessionCreated: (ARCoreSessionLifecycleHelper, ARCameraRenderer) -> Unit
 ) {
-    // Remember the overlay for detection results
-    var boundingBoxOverlay by remember { mutableStateOf<com.example.mnn_llm_test.arcore.BoundingBoxOverlay?>(null) }
-    
-    Box {
-        // GLSurfaceView for ARCore rendering
-        AndroidView(
-            factory = { ctx ->
-                GLSurfaceView(ctx).apply {
+    AndroidView(
+        factory = { ctx ->
+            // Create a FrameLayout to hold both GLSurfaceView and BoundingBoxOverlay
+            FrameLayout(ctx).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+                
+                // Create the BoundingBoxOverlay
+                val boundingBoxOverlay = BoundingBoxOverlay(ctx).apply {
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                    )
+                }
+                
+                // Create the GLSurfaceView
+                val glSurfaceView = GLSurfaceView(ctx).apply {
                     setEGLContextClientVersion(2)
                     setEGLConfigChooser(8, 8, 8, 8, 16, 0)
                     
-                    // Initialize ARCore components
-                    val arCoreSessionHelper = ARCoreSessionLifecycleHelper(context as androidx.activity.ComponentActivity)
-                    val renderer = ARCameraRenderer(context as androidx.activity.ComponentActivity, onCapture)
-                    
-                    // Connect renderer to session helper
-                    renderer.arCoreSessionHelper = arCoreSessionHelper
-                    
-                    // Set up detection callback to update overlay
-                    renderer.onDetectionUpdate = { detections ->
-                        boundingBoxOverlay?.updateDetections(
-                            detections.map { detection ->
-                                com.example.mnn_llm_test.arcore.BoundingBoxOverlay.DetectionWithDepth(
-                                    detection.detection,
-                                    detection.distance
-                                )
-                            }
-                        )
-                    }
-                    
-                    // Setup ARCore session configuration
-                    arCoreSessionHelper.exceptionCallback = { exception ->
-                        val message = when (exception) {
-                            is UnavailableUserDeclinedInstallationException ->
-                                "Please install Google Play Services for AR"
-                            is UnavailableApkTooOldException -> "Please update ARCore"
-                            is UnavailableSdkTooOldException -> "Please update this app"
-                            is UnavailableDeviceNotCompatibleException -> "This device does not support AR"
-                            is CameraNotAvailableException -> "Camera not available. Try restarting the app."
-                            else -> "Failed to create AR session: $exception"
-                        }
-                        Log.e("ARCameraView", "ARCore threw an exception", exception)
-                    }
-                    
-                    // Configure session features including depth estimation
-                    arCoreSessionHelper.beforeSessionResume = { session ->
-                        session.configure(
-                            session.config.apply {
-                                depthMode = Config.DepthMode.AUTOMATIC
-                                instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
-                            }
-                        )
-                    }
-                    
-                    lifecycleOwner.lifecycle.addObserver(arCoreSessionHelper)
-                    lifecycleOwner.lifecycle.addObserver(renderer)
-                    
-                    // Setup SampleRender and initialize renderer
-                    val sampleRender = SampleRender(this, renderer, context.assets)
-                    
-                    renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
-                    preserveEGLContextOnPause = true
-                    
-                    // Setup touch listener for capture
-                    setOnTouchListener { _, event ->
-                        if (event.action == android.view.MotionEvent.ACTION_DOWN) {
-                            renderer.requestCapture()
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    
-                    // Notify parent about ARCore session creation
-                    onArCoreSessionCreated(arCoreSessionHelper, renderer)
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                    )
                 }
-            },
-            modifier = Modifier.fillMaxSize()
-        )
-        
-        // Overlay for bounding boxes
-        AndroidView(
-            factory = { ctx ->
-                com.example.mnn_llm_test.arcore.BoundingBoxOverlay(ctx).apply {
-                    boundingBoxOverlay = this
-                    // Pass overlay reference to renderer for updates
-                    // TODO: Set up detection callback
+                
+                // Initialize ARCore components with overlay callback
+                val arCoreSessionHelper = ARCoreSessionLifecycleHelper(context as androidx.activity.ComponentActivity)
+                val renderer = ARCameraRenderer(
+                    context as androidx.activity.ComponentActivity, 
+                    onCapture
+                ) { detections ->
+                    // Update overlay on main thread
+                    boundingBoxOverlay.post {
+                        boundingBoxOverlay.updateDetections(detections)
+                    }
                 }
-            },
-            modifier = Modifier.fillMaxSize()
-        )
-    }
+                
+                // Connect renderer to session helper
+                renderer.arCoreSessionHelper = arCoreSessionHelper
+                
+                // Setup ARCore session configuration
+                arCoreSessionHelper.exceptionCallback = { exception ->
+                    val message = when (exception) {
+                        is UnavailableUserDeclinedInstallationException ->
+                            "Please install Google Play Services for AR"
+                        is UnavailableApkTooOldException -> "Please update ARCore"
+                        is UnavailableSdkTooOldException -> "Please update this app"
+                        is UnavailableDeviceNotCompatibleException -> "This device does not support AR"
+                        is CameraNotAvailableException -> "Camera not available. Try restarting the app."
+                        else -> "Failed to create AR session: $exception"
+                    }
+                    Log.e("ARCameraView", "ARCore threw an exception", exception)
+                }
+                
+                // Configure session features including depth estimation
+                arCoreSessionHelper.beforeSessionResume = { session ->
+                    session.configure(
+                        session.config.apply {
+                            depthMode = Config.DepthMode.AUTOMATIC
+                            instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
+                        }
+                    )
+                }
+                
+                lifecycleOwner.lifecycle.addObserver(arCoreSessionHelper)
+                lifecycleOwner.lifecycle.addObserver(renderer)
+                
+                // Setup SampleRender and initialize renderer
+                val sampleRender = SampleRender(glSurfaceView, renderer, context.assets)
+                
+                glSurfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+                glSurfaceView.preserveEGLContextOnPause = true
+                
+                // Setup touch listener for capture on the overlay (so it doesn't interfere with GLSurfaceView)
+                boundingBoxOverlay.setOnTouchListener { _, event ->
+                    if (event.action == android.view.MotionEvent.ACTION_DOWN) {
+                        renderer.requestCapture()
+                        true
+                    } else {
+                        false
+                    }
+                }
+                
+                // Add both views to the FrameLayout
+                addView(glSurfaceView)
+                addView(boundingBoxOverlay)
+                
+                // Notify parent about ARCore session creation
+                onArCoreSessionCreated(arCoreSessionHelper, renderer)
+            }
+        },
+        modifier = Modifier.fillMaxSize()
+    )
 } 

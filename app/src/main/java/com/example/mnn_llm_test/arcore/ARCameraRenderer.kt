@@ -19,15 +19,22 @@ import com.example.mnn_llm_test.arcore.ml.FrameProcessor
 import kotlinx.coroutines.*
 import java.io.IOException
 import java.nio.ByteBuffer
+import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.*
+import android.content.ContentValues
+import android.content.Context
+import android.media.MediaScannerConnection
+import android.provider.MediaStore
+import android.os.Environment
 
 /** AR Camera Renderer that integrates depth estimation and object detection */
 class ARCameraRenderer(
     private val activity: androidx.activity.ComponentActivity,
-    private val onCaptureCallback: (Bitmap?) -> Unit
+    private val onCaptureCallback: (Bitmap?) -> Unit,
+    private val onDetectionUpdate: ((List<DetectionWithDepth>) -> Unit)? = null
 ) : SampleRender.Renderer, DefaultLifecycleObserver {
-    
-    // Callback for detection updates
-    var onDetectionUpdate: ((List<DetectionWithDepth>) -> Unit)? = null
     
     companion object {
         private const val TAG = "ARCameraRenderer"
@@ -254,6 +261,11 @@ class ARCameraRenderer(
             try {
                 val bitmap = frameProcessor.frameToBitmap(frame)
                 if (bitmap != null) {
+                    // Save YOLO input image for debugging (every 10th detection frame)
+                    if (frameCounter % (detectionInterval * 10) == 0) {
+                        saveYoloInputImage(bitmap)
+                    }
+                    
                     val detections = liteRTDetector.detectObjects(bitmap)
                     
                     if (detections.isNotEmpty()) {
@@ -267,7 +279,7 @@ class ARCameraRenderer(
                         withContext(Dispatchers.Main) {
                             currentDetectionResults = detectionsWithDepth
                             
-                            // Update overlay with detection results
+                            // Update overlay callback if provided
                             onDetectionUpdate?.invoke(detectionsWithDepth)
                             
                             // Enhanced logging for debugging
@@ -283,8 +295,6 @@ class ARCameraRenderer(
                     } else {
                         withContext(Dispatchers.Main) {
                             currentDetectionResults = null
-                            
-                            // Clear overlay
                             onDetectionUpdate?.invoke(emptyList())
                             
                             // Log when no objects detected (less frequently to avoid spam)
@@ -391,6 +401,41 @@ class ARCameraRenderer(
             mainHandler.post {
                 onCaptureCallback(null)
             }
+        }
+    }
+
+    /**
+     * Save YOLO input image to device storage for debugging
+     */
+    private fun saveYoloInputImage(bitmap: Bitmap) {
+        try {
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.getDefault()).format(Date())
+            val filename = "YOLO_input_$timestamp.jpg"
+            
+            // Create NewYOLODebug directory in external storage
+            val picturesDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "NewYOLODebug")
+            if (!picturesDir.exists()) {
+                picturesDir.mkdirs()
+            }
+            
+            val imageFile = File(picturesDir, filename)
+            
+            FileOutputStream(imageFile).use { outputStream ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
+            }
+            
+            // Make image visible in gallery by scanning it
+            MediaScannerConnection.scanFile(
+                activity,
+                arrayOf(imageFile.absolutePath),
+                arrayOf("image/jpeg"),
+                null
+            )
+            
+            Log.d(TAG, "💾 Saved YOLO input image: ${imageFile.absolutePath}")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error saving YOLO input image", e)
         }
     }
 } 
