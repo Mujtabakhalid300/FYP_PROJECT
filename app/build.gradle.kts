@@ -95,7 +95,6 @@ dependencies {
     // Manually ensure Core KTX dependency is included
     implementation("androidx.core:core-ktx:1.13.0")
 
-
     implementation("io.coil-kt:coil-compose:2.5.0")
 
     implementation ("net.java.dev.jna:jna:5.13.0@aar")
@@ -111,12 +110,23 @@ dependencies {
 
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
-    // CameraX dependencies
-    implementation("androidx.camera:camera-core:1.3.3")
-    implementation("androidx.camera:camera-camera2:1.3.3")
-    implementation("androidx.camera:camera-lifecycle:1.3.3")
-    implementation("androidx.camera:camera-view:1.3.3")
-    implementation("androidx.camera:camera-extensions:1.3.3") // Optional, for vendor extensions
+    // ARCore (Google Play Services for AR) library
+    implementation("com.google.ar:core:1.49.0")
+
+    // Obj - a simple Wavefront OBJ file loader for ARCore
+    // https://github.com/javagl/Obj
+    implementation("de.javagl:obj:0.4.0")
+
+    // TensorFlow Lite with GPU acceleration for YOLO object detection
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-gpu-api:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+
+    // Additional Android support libraries for ARCore
+    implementation("androidx.appcompat:appcompat:1.1.0")
+    implementation("androidx.lifecycle:lifecycle-common-java8:2.2.0")
+    implementation("com.google.android.material:material:1.1.0")
 
     val roomVersion = "2.6.1"
 
