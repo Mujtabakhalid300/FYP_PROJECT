@@ -81,6 +81,8 @@ class ARCameraRenderer(
         currentDetectionResults = null
         frameCounter = 0
         
+        Log.d(TAG, "🚀 AR Camera resumed - initializing detector")
+        
         // Initialize object detector
         initializeLiteRTDetector()
     }
@@ -99,7 +101,7 @@ class ARCameraRenderer(
             isDetectorInitialized = false
         }
         
-        Log.d(TAG, "AR Camera paused - detector cleanup complete")
+        Log.d(TAG, "⏸️ AR Camera paused - detector cleanup complete")
     }
 
     /**
@@ -171,6 +173,12 @@ class ARCameraRenderer(
         } catch (e: CameraNotAvailableException) {
             Log.e(TAG, "Camera not available during onDrawFrame", e)
             return
+        } catch (e: com.google.ar.core.exceptions.SessionPausedException) {
+            Log.d(TAG, "Session is paused, skipping frame update")
+            return
+        } catch (e: Exception) {
+            Log.e(TAG, "Unexpected error during session update", e)
+            return
         }
 
         val camera = frame.camera
@@ -193,7 +201,10 @@ class ARCameraRenderer(
                 
                 currentDepthData = DepthData(depthArray, width, height, plane.pixelStride, plane.rowStride)
                 
-                Log.d(TAG, "Depth data updated: ${width}x${height}")
+                // Enhanced depth logging every 30 frames to avoid spam
+                if (frameCounter % 30 == 0) {
+                    Log.d(TAG, "📏 Depth data updated: ${width}x${height}, stride: ${plane.rowStride}, pixel stride: ${plane.pixelStride}")
+                }
                 depthImage.close()
             } catch (e: NotYetAvailableException) {
                 currentDepthData = null
@@ -246,11 +257,24 @@ class ARCameraRenderer(
                         
                         withContext(Dispatchers.Main) {
                             currentDetectionResults = detectionsWithDepth
-                            Log.d(TAG, "Detected ${detections.size} objects with depth info")
+                            
+                            // Enhanced logging for debugging
+                            Log.d(TAG, "🎯 Detected ${detections.size} objects with depth info:")
+                            detectionsWithDepth.forEachIndexed { index, detectionWithDepth ->
+                                val detection = detectionWithDepth.detection
+                                val distance = detectionWithDepth.distance
+                                Log.d(TAG, "  [$index] Object: ${detection.className} (${String.format("%.2f", detection.confidence * 100)}%) " +
+                                          "at distance: ${distance}mm (${String.format("%.1f", distance / 1000.0)}m) " +
+                                          "bbox: [${detection.x.toInt()}, ${detection.y.toInt()}, ${detection.width.toInt()}, ${detection.height.toInt()}]")
+                            }
                         }
                     } else {
                         withContext(Dispatchers.Main) {
                             currentDetectionResults = null
+                            // Log when no objects detected (less frequently to avoid spam)
+                            if (frameCounter % 60 == 0) {
+                                Log.d(TAG, "🔍 No objects detected in current frame")
+                            }
                         }
                     }
                     
