@@ -73,7 +73,12 @@ private fun ARCameraContent(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    var hasCameraPermission by remember { mutableStateOf(false) }
+    // ✅ Initialize with actual permission status to prevent popup flash
+    var hasCameraPermission by remember { 
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        ) 
+    }
     val coroutineScope = rememberCoroutineScope()
     val chatRepository = (context.applicationContext as ChatApplication).repository
     
@@ -88,10 +93,9 @@ private fun ARCameraContent(
         }
     )
 
+    // Only request permission if we don't already have it
     LaunchedEffect(key1 = true) {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            hasCameraPermission = true
-        } else {
+        if (!hasCameraPermission) {
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
