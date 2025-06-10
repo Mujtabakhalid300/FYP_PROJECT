@@ -5,6 +5,8 @@ import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.view.WindowCompat
+import android.view.WindowManager
 import androidx.annotation.OptIn
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,6 +45,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         MnnLlmJni // Initialize JNI if needed
         enableEdgeToEdge()
+        
+        // 🎨 Set system bars to use app theme colors
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
 
         setContent {
             var isModelLoading by remember { mutableStateOf(true) }

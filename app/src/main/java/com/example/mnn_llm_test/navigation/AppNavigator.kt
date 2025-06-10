@@ -54,6 +54,7 @@ fun AppNavigator(
         }
     } else {
         Scaffold(
+            modifier = Modifier.systemBarsPadding(),
             bottomBar = {
                 BottomNavigationBar(navController = navController)
             }

@@ -22,6 +22,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import android.widget.FrameLayout
 import android.view.ViewGroup
 import com.example.mnn_llm_test.arcore.BoundingBoxOverlay
@@ -115,85 +119,64 @@ private fun ARCameraContent(
     ) {
         if (hasCameraPermission) {
             if (isCameraActive) {
-                Box(modifier = Modifier.weight(1f)) {
-                    ARCameraView(
-                        context = context,
-                        lifecycleOwner = lifecycleOwner,
-                        onCapture = { bitmap ->
-                            if (bitmap != null) {
-                                coroutineScope.launch(Dispatchers.IO) {
-                                    // Save bitmap to file
-                                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-                                    val filename = "ARCapture_$timestamp.jpg"
-                                    val imageFile = File(context.filesDir, filename)
-                                    
-                                    try {
-                                        FileOutputStream(imageFile).use { outputStream ->
-                                            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
-                                        }
-                                        
-                                        val filePath = imageFile.absolutePath
-                                        Log.d("ARCameraScreen", "Photo captured: $filePath")
-                                        
-                                        // Create chat thread and associate image
-                                        val newChatThread = ChatThread(
-                                            title = "AR Chat Session - ${System.currentTimeMillis()}",
-                                            systemPrompt = null,
-                                            createdAt = Timestamp(System.currentTimeMillis()),
-                                            updatedAt = Timestamp(System.currentTimeMillis())
-                                        )
-                                        val threadId = chatRepository.insertChatThread(newChatThread).toInt()
-
-                                        val newChatImage = ChatThreadImage(
-                                            threadId = threadId,
-                                            imagePath = filePath,
-                                            createdAt = Timestamp(System.currentTimeMillis())
-                                        )
-                                        chatRepository.insertChatThreadImage(newChatImage)
-                                        
-                                        launch(Dispatchers.Main) {
-                                            navController.navigate(Screen.ChatView.routeWithArgs(threadId = threadId))
-                                        }
-                                    } catch (e: Exception) {
-                                        Log.e("ARCameraScreen", "Error saving image", e)
-                                    } finally {
-                                        bitmap.recycle()
+                ARCameraView(
+                    context = context,
+                    lifecycleOwner = lifecycleOwner,
+                    onCapture = { bitmap ->
+                        if (bitmap != null) {
+                            coroutineScope.launch(Dispatchers.IO) {
+                                // Save bitmap to file
+                                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                                val filename = "ARCapture_$timestamp.jpg"
+                                val imageFile = File(context.filesDir, filename)
+                                
+                                try {
+                                    FileOutputStream(imageFile).use { outputStream ->
+                                        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
                                     }
+                                    
+                                    val filePath = imageFile.absolutePath
+                                    Log.d("ARCameraScreen", "Photo captured: $filePath")
+                                    
+                                    // Create chat thread and associate image
+                                    val newChatThread = ChatThread(
+                                        title = "AR Chat Session - ${System.currentTimeMillis()}",
+                                        systemPrompt = null,
+                                        createdAt = Timestamp(System.currentTimeMillis()),
+                                        updatedAt = Timestamp(System.currentTimeMillis())
+                                    )
+                                    val threadId = chatRepository.insertChatThread(newChatThread).toInt()
+
+                                    val newChatImage = ChatThreadImage(
+                                        threadId = threadId,
+                                        imagePath = filePath,
+                                        createdAt = Timestamp(System.currentTimeMillis())
+                                    )
+                                    chatRepository.insertChatThreadImage(newChatImage)
+                                    
+                                    launch(Dispatchers.Main) {
+                                        navController.navigate(Screen.ChatView.routeWithArgs(threadId = threadId))
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e("ARCameraScreen", "Error saving image", e)
+                                } finally {
+                                    bitmap.recycle()
                                 }
-                            } else {
-                                Log.e("ARCameraScreen", "Failed to capture image")
                             }
-                        },
-                        onArCoreSessionCreated = { helper, rendererInstance ->
-                            arCoreSessionHelper = helper
-                            renderer = rendererInstance
-                            
-                            // Set the initial camera state based on current isCameraActive value
-                            Log.d("ARCameraScreen", "🎯 Renderer created, setting initial camera active state: $isCameraActive")
-                            rendererInstance.setCameraActive(isCameraActive)
+                        } else {
+                            Log.e("ARCameraScreen", "Failed to capture image")
                         }
-                    )
-                }
-                // Instructions overlay at bottom
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-                        )
-                    ) {
-                        Text(
-                            text = "Tap the screen to capture with AR depth & object detection",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(16.dp),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
+                    },
+                    onArCoreSessionCreated = { helper, rendererInstance ->
+                        arCoreSessionHelper = helper
+                        renderer = rendererInstance
+                        
+                        // Set the initial camera state based on current isCameraActive value
+                        Log.d("ARCameraScreen", "🎯 Renderer created, setting initial camera active state: $isCameraActive")
+                        rendererInstance.setCameraActive(isCameraActive)
+                    },
+                    modifier = Modifier.weight(1f)
+                )
             } else {
                 // Camera is not active - show placeholder
                 Box(
@@ -222,10 +205,13 @@ fun ARCameraView(
     context: Context,
     lifecycleOwner: LifecycleOwner,
     onCapture: (Bitmap?) -> Unit,
-    onArCoreSessionCreated: (ARCoreSessionLifecycleHelper, ARCameraRenderer) -> Unit
+    onArCoreSessionCreated: (ARCoreSessionLifecycleHelper, ARCameraRenderer) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    AndroidView(
-        factory = { ctx ->
+    Box(modifier = modifier) {
+        // Camera preview
+        AndroidView(
+            factory = { ctx ->
             // Create a FrameLayout to hold both GLSurfaceView and BoundingBoxOverlay
             FrameLayout(ctx).apply {
                 layoutParams = ViewGroup.LayoutParams(
@@ -323,5 +309,61 @@ fun ARCameraView(
             }
         },
         modifier = Modifier.fillMaxSize()
-    )
+        )
+        
+        // ✨ Overlay text positioned directly on top of camera preview
+        var overlayText by remember { mutableStateOf("Tap to Chat") }
+        var overlayVisible by remember { mutableStateOf(true) }
+        var overlayAlpha by remember { mutableStateOf(0f) }
+        
+        // Initial fade in, then fade out after delay
+        LaunchedEffect(Unit) {
+            // Fade in
+            androidx.compose.animation.core.animate(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = tween(500)
+            ) { value, _ ->
+                overlayAlpha = value
+            }
+            
+            // Stay visible for 3 seconds
+            kotlinx.coroutines.delay(3000)
+            
+            // Fade out
+            androidx.compose.animation.core.animate(
+                initialValue = 1f,
+                targetValue = 0f,
+                animationSpec = tween(500)
+            ) { value, _ ->
+                overlayAlpha = value
+            }
+            
+            overlayVisible = false
+        }
+        
+        if (overlayVisible) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = overlayText,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = overlayAlpha),
+                    modifier = Modifier
+                        .drawBehind {
+                            // Semi-transparent background like HelloAR
+                            drawRoundRect(
+                                color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f * overlayAlpha),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(12.dp.toPx())
+                            )
+                        }
+                        .padding(16.dp)
+                )
+            }
+        }
+    }
 } 
