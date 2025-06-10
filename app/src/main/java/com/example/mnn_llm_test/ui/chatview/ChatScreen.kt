@@ -15,11 +15,9 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
@@ -31,24 +29,19 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.example.mnn_llm_test.MnnLlmJni
 import com.example.mnn_llm_test.model.ChatMessage
-import com.example.mnn_llm_test.navigation.Screen
-import com.example.mnn_llm_test.ui.BottomNavigationStrip
 import com.example.mnn_llm_test.ui.chatview.ChatViewModel
 import com.example.mnn_llm_test.ui.chatview.ChatViewModelFactory
-import com.example.mnn_llm_test.ui.chatview.SENDER_USER
-import com.example.mnn_llm_test.ui.chatview.SENDER_MODEL
-import com.example.mnn_llm_test.ui.chatview.SENDER_IMAGE
 import com.example.mnntest.ChatApplication
-import com.example.mnntest.data.ChatThread
 import com.example.mnn_llm_test.VoskHelper
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import java.io.File
-import java.util.UUID
 import java.sql.Timestamp
+
+// Define message sender types
+const val SENDER_USER = "user"
+const val SENDER_MODEL = "model"
+const val SENDER_IMAGE = "image_display" // Special sender type for image display message
 
 // Custom ProgressListener interface for ChatScreen that includes finalizeMessage
 interface ChatProgressListener : MnnLlmJni.ProgressListener {
@@ -60,17 +53,16 @@ interface ChatProgressListener : MnnLlmJni.ProgressListener {
 fun ChatScreen(
     navController: NavHostController,
     chatSession: MnnLlmJni.ChatSession?,
-    threadId: Int,
-    currentScreen: String,
-    hasChatHistory: Boolean,
-    onNavigateToCamera: () -> Unit,
-    onNavigateToHistory: () -> Unit
+    threadId: Int
 ) {
     val context = LocalContext.current
     val repository = (context.applicationContext as ChatApplication).repository
     val viewModel: ChatViewModel = viewModel(
         factory = ChatViewModelFactory(repository, threadId)
     )
+
+    // Collect chat thread info
+    val currentThread by viewModel.chatThread.collectAsState()
 
     var inputText by remember { mutableStateOf(TextFieldValue("")) }
     val uiMessages by viewModel.messages.collectAsState()
@@ -120,6 +112,7 @@ fun ChatScreen(
         }
         Log.d("ChatScreen", "LaunchedEffect for setNewChatHistory triggered. Thread ID: $threadId")
 
+        // Convert UiChatMessage list to List<String> for the JNI call
         val historyToSet = uiMessages.map { it.text }
 
         Log.d("ChatScreen", "Attempting to set new chat history for thread $threadId. History size: ${historyToSet.size}")
@@ -141,6 +134,10 @@ fun ChatScreen(
 
         currentChatImage?.let { image ->
             image.imagePath?.let { path ->
+                val imageMessageExists = uiMessages.any { it.sender == SENDER_IMAGE && it.text == path }
+                if (!imageMessageExists) {
+                    // Handle image display logic here if needed
+                }
                 initialImageProcessed = true
             }
         }
@@ -148,6 +145,7 @@ fun ChatScreen(
 
     val progressListener = remember {
         object : ChatProgressListener {
+            private var currentModelMessageId: String? = null
             private var currentDbMessageId: Int? = null
             private val responseBuilder = StringBuilder()
 
@@ -157,6 +155,7 @@ fun ChatScreen(
                     val fullResponse = responseBuilder.toString()
 
                     if (currentDbMessageId == null) {
+                        // First token, create new message
                         launch {
                             val newId = viewModel.addNewMessageAndGetId(fullResponse, SENDER_MODEL)
                             newId?.let {
@@ -164,10 +163,13 @@ fun ChatScreen(
                             }
                         }
                     } else {
+                        // Subsequent tokens, update existing message
                         currentDbMessageId?.let {
                             viewModel.updateMessage(it, fullResponse)
                         }
                     }
+                    
+                    // Scroll to bottom
                     if (uiMessages.isNotEmpty()) {
                         listState.animateScrollToItem(uiMessages.size - 1)
                     }
@@ -177,12 +179,14 @@ fun ChatScreen(
 
             override fun finalizeMessage() {
                 coroutineScope.launch(Dispatchers.Main) {
+                    // Update the final state of the message in DB
                     viewModel.chatThread.value?.let { thread ->
                         val app = context.applicationContext as ChatApplication
                         app.repository.updateChatThread(thread.copy(updatedAt = Timestamp(System.currentTimeMillis())))
                     }
 
                     responseBuilder.clear()
+                    currentModelMessageId = null
                     currentDbMessageId = null
                     isGenerating = false
                 }
@@ -229,70 +233,12 @@ fun ChatScreen(
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(viewModel.chatThread.collectAsState().value?.title ?: "Chat") }
-            )
-        }
-    ) { contentPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(contentPadding)
-        ) {
-            // Chat messages area
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 8.dp),
-                reverseLayout = false
-            ) {
-                if (initialImageProcessed) {
-                    currentChatImage?.imagePath?.let { path ->
-                        item("displayed_image") {
-                            ImageCard(imagePath = path)
-                        }
-                    }
-                }
-
-                items(uiMessages, key = { it.id }) { message ->
-                    MessageBubble(message = message, onRetry = {
-                        Log.d("ChatScreen", "Retry logic for message: ${message.text}")
-                        if (message.sender == SENDER_MODEL && inputText.text.isBlank()) {
-                            // Potentially find the user message that led to this error and resend
-                        } else if (message.sender == SENDER_USER) {
-                            val userMessageText = message.text
-                            isGenerating = true
-                            progressListener.finalizeMessage()
-
-                            val imagePathForRetry = currentChatImage?.imagePath
-                            val promptForRetry = if (imagePathForRetry != null && !imageAlreadySentInConversation) {
-                                "<img>${imagePathForRetry}</img>$userMessageText"
-                            } else {
-                                userMessageText
-                            }
-                            coroutineScope.launch(Dispatchers.IO) {
-                                try {
-                                    chatSession?.generate(promptForRetry, progressListener)
-                                } catch (e: Exception) {
-                                    Log.e("ChatScreen", "Error during LLM prediction on retry: ${e.message}", e)
-                                    launch(Dispatchers.Main) {
-                                        viewModel.addMessage("Retry Error: ${e.message}", SENDER_MODEL)
-                                        progressListener.finalizeMessage()
-                                    }
-                                }
-                            }
-                        }
-                    })
-                }
-            }
-            
-            // Input area
+        bottomBar = {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(8.dp),
+                    .padding(8.dp)
+                    .navigationBarsPadding(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(
@@ -329,15 +275,54 @@ fun ChatScreen(
                     Icon(Icons.Default.Send, contentDescription = "Send Message")
                 }
             }
-            
-            // Bottom Navigation Strip
-            BottomNavigationStrip(
-                currentScreen = currentScreen,
-                hasChatHistory = hasChatHistory,
-                onCameraClick = onNavigateToCamera,
-                onChatClick = { /* Already on chat */ },
-                onHistoryClick = onNavigateToHistory
-            )
+        }
+    ) { contentPadding ->
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding)
+                .padding(horizontal = 8.dp),
+            reverseLayout = false
+        ) {
+            if (initialImageProcessed) {
+                currentChatImage?.imagePath?.let { path ->
+                    item("displayed_image") {
+                        ImageCard(imagePath = path)
+                    }
+                }
+            }
+
+            items(uiMessages, key = { it.id }) { message ->
+                MessageBubble(message = message, onRetry = {
+                    Log.d("ChatScreen", "Retry logic for message: ${message.text}")
+                    if (message.sender == SENDER_MODEL && inputText.text.isBlank()) {
+                        // Handle retry logic for model messages
+                    } else if (message.sender == SENDER_USER) {
+                        val userMessageText = message.text
+                        isGenerating = true
+                        progressListener.finalizeMessage()
+
+                        val imagePathForRetry = currentChatImage?.imagePath
+                        val promptForRetry = if (imagePathForRetry != null && !imageAlreadySentInConversation) {
+                            "<img>${imagePathForRetry}</img>$userMessageText"
+                        } else {
+                            userMessageText
+                        }
+                        coroutineScope.launch(Dispatchers.IO) {
+                            try {
+                                chatSession?.generate(promptForRetry, progressListener)
+                            } catch (e: Exception) {
+                                Log.e("ChatScreen", "Error during LLM prediction on retry: ${e.message}", e)
+                                launch(Dispatchers.Main) {
+                                    viewModel.addMessage("Retry Error: ${e.message}", SENDER_MODEL)
+                                    progressListener.finalizeMessage()
+                                }
+                            }
+                        }
+                    }
+                })
+            }
         }
     }
 }
@@ -375,31 +360,30 @@ fun ImageCard(imagePath: String) {
 }
 
 @Composable
-fun MessageBubble(message: com.example.mnn_llm_test.model.ChatMessage, onRetry: () -> Unit) {
+fun MessageBubble(message: ChatMessage, onRetry: () -> Unit) {
     if (message.sender == SENDER_IMAGE) {
         return
     }
 
     val bubbleColor = if (message.sender == SENDER_USER) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
     val textColor = if (message.sender == SENDER_USER) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+    val alignment = if (message.sender == SENDER_USER) Alignment.CenterEnd else Alignment.CenterStart
 
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
-        horizontalArrangement = if (message.sender == SENDER_USER) Arrangement.End else Arrangement.Start
+        contentAlignment = alignment
     ) {
-        Card(
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = bubbleColor),
-            modifier = Modifier.widthIn(max = 280.dp)
-        ) {
-            Text(
-                text = message.text,
-                modifier = Modifier.padding(12.dp),
-                color = textColor,
-                fontSize = 16.sp
-            )
-        }
+        Text(
+            text = message.text,
+            color = textColor,
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(bubbleColor)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .widthIn(max = 300.dp),
+            fontSize = 16.sp
+        )
     }
 } 

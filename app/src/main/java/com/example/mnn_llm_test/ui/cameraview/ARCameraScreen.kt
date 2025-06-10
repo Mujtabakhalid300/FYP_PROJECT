@@ -30,7 +30,6 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.navigation.NavHostController
 import com.example.mnn_llm_test.navigation.Screen
-import com.example.mnn_llm_test.ui.BottomNavigationStrip
 import com.example.mnntest.ChatApplication
 import com.example.mnntest.data.ChatThread
 import com.example.mnntest.data.ChatThreadImage
@@ -53,11 +52,21 @@ import com.example.mnn_llm_test.arcore.ARCameraRenderer
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ARCameraScreen(
+    navController: NavHostController
+) {
+    // Wrap everything in lifecycle-aware camera management
+    LifecycleAwareCameraView(navController = navController) { isActiveCamera ->
+        ARCameraContent(
+            navController = navController,
+            isActiveCamera = isActiveCamera
+        )
+    }
+}
+
+@Composable
+private fun ARCameraContent(
     navController: NavHostController,
-    currentScreen: String,
-    hasChatHistory: Boolean,
-    onNavigateToChat: () -> Unit,
-    onNavigateToHistory: () -> Unit
+    isActiveCamera: Boolean
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -65,7 +74,7 @@ fun ARCameraScreen(
     val coroutineScope = rememberCoroutineScope()
     val chatRepository = (context.applicationContext as ChatApplication).repository
     
-    // ARCore session lifecycle helper
+    // ARCore session lifecycle helper - only create when camera is active
     var arCoreSessionHelper by remember { mutableStateOf<ARCoreSessionLifecycleHelper?>(null) }
     var renderer by remember { mutableStateOf<ARCameraRenderer?>(null) }
 
@@ -84,32 +93,23 @@ fun ARCameraScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("AR Camera View") }
-            )
-        },
-        bottomBar = {
-            BottomNavigationStrip(
-                currentScreen = currentScreen,
-                hasChatHistory = hasChatHistory,
-                onCameraClick = { /* Already on camera */ },
-                onChatClick = onNavigateToChat,
-                onHistoryClick = onNavigateToHistory
-            )
+    // Handle ARCore lifecycle based on camera active state
+    LaunchedEffect(isActiveCamera) {
+        if (isActiveCamera) {
+            Log.d("ARCameraScreen", "🟢 Camera activated - initializing ARCore")
+        } else {
+            Log.d("ARCameraScreen", "🔴 Camera deactivated - cleaning up ARCore")
+            // Cleanup happens automatically through lifecycle observers
         }
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .navigationBarsPadding()
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            if (hasCameraPermission) {
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        if (hasCameraPermission) {
+            if (isActiveCamera) {
                 Box(modifier = Modifier.weight(1f)) {
                     ARCameraView(
                         context = context,
@@ -165,18 +165,44 @@ fun ARCameraScreen(
                         }
                     )
                 }
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "Tap the screen to capture with AR depth & object detection",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-            } else {
-                Text("Camera permission is required. Please grant permission.")
-                Spacer(modifier = Modifier.height(8.dp))
-                Button(onClick = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }) {
-                    Text("Grant Camera Permission")
+                // Instructions overlay at bottom
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                        )
+                    ) {
+                        Text(
+                            text = "Tap the screen to capture with AR depth & object detection",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(16.dp),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
+            } else {
+                // Camera is not active - show placeholder
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Camera paused",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                }
+            }
+        } else {
+            Text("Camera permission is required. Please grant permission.")
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }) {
+                Text("Grant Camera Permission")
             }
         }
     }

@@ -21,7 +21,7 @@ import com.example.mnn_llm_test.ui.cameraview.CameraScreen
 import com.example.mnn_llm_test.ui.chatview.ChatScreen
 import com.example.mnn_llm_test.ui.chathistory.ChatHistoryScreen
 import com.example.mnn_llm_test.ui.WelcomeScreen
-import com.example.mnntest.ChatApplication
+import com.example.mnn_llm_test.navigation.BottomNavigationBar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -42,16 +42,6 @@ fun AppNavigator(
     chatSessionState: MnnLlmJni.ChatSession?, // Pass the loaded chat session
     isModelLoading: Boolean // Pass the loading state
 ) {
-    val context = LocalContext.current
-    val repository = (context.applicationContext as ChatApplication).repository
-    
-    // Track if there are any chat threads for enabling/disabling buttons
-    val allChatThreads by repository.getAllChatThreads().collectAsState(initial = emptyList())
-    val hasChatHistory = allChatThreads.isNotEmpty()
-    
-    // Get current route for bottom navigation highlighting
-    val currentRoute = navController.currentDestination?.route ?: Screen.CameraView.route
-    
     if (isModelLoading) {
          Scaffold(
              modifier = Modifier.fillMaxSize().systemBarsPadding(),
@@ -63,80 +53,40 @@ fun AppNavigator(
             )
         }
     } else {
-        NavHost(navController = navController, startDestination = Screen.CameraView.route) {
-            composable(Screen.CameraView.route) {
-                CameraScreen(
-                    navController = navController,
-                    currentScreen = "camera_view",
-                    hasChatHistory = hasChatHistory,
-                    onNavigateToChat = {
-                        if (hasChatHistory) {
-                            // Navigate to the most recent chat
-                            val latestThread = allChatThreads.firstOrNull()
-                            latestThread?.let {
-                                navController.navigate(Screen.ChatView.routeWithArgs(threadId = it.id))
-                            }
-                        }
-                    },
-                    onNavigateToHistory = {
-                        if (hasChatHistory) {
-                            navController.navigate(Screen.ChatHistory.route)
-                        }
-                    }
-                )
+        Scaffold(
+            bottomBar = {
+                BottomNavigationBar(navController = navController)
             }
-            
-            composable(
-                route = Screen.ChatView.chatViewRouteDefinition,
-                arguments = listOf(navArgument(Screen.ChatView.threadIdArg) {
-                    type = NavType.IntType
-                })
-            ) { backStackEntry ->
-                val threadId = backStackEntry.arguments?.getInt(Screen.ChatView.threadIdArg)
-                if (threadId != null) {
-                    ChatScreen(
-                        navController = navController,
-                        chatSession = chatSessionState,
-                        threadId = threadId,
-                        currentScreen = "chat_view",
-                        hasChatHistory = hasChatHistory,
-                        onNavigateToCamera = {
-                            navController.navigate(Screen.CameraView.route) {
-                                popUpTo(Screen.CameraView.route) { inclusive = true }
-                            }
-                        },
-                        onNavigateToHistory = {
-                            if (hasChatHistory) {
-                                navController.navigate(Screen.ChatHistory.route)
-                            }
-                        }
-                    )
-                } else {
-                    Log.e("AppNavigator", "threadId is null for ChatScreen, navigating back.")
-                    navController.popBackStack()
+        ) { paddingValues ->
+            NavHost(
+                navController = navController, 
+                startDestination = Screen.CameraView.route,
+                modifier = Modifier.padding(paddingValues)
+            ) {
+                composable(Screen.CameraView.route) {
+                    CameraScreen(navController = navController)
                 }
-            }
-            
-            composable(Screen.ChatHistory.route) {
-                ChatHistoryScreen(
-                    navController = navController,
-                    currentScreen = "chat_history",
-                    hasChatHistory = hasChatHistory,
-                    onNavigateToCamera = {
-                        navController.navigate(Screen.CameraView.route) {
-                            popUpTo(Screen.CameraView.route) { inclusive = true }
-                        }
-                    },
-                    onNavigateToChat = {
-                        if (hasChatHistory) {
-                            // Navigate to the most recent chat
-                            val latestThread = allChatThreads.firstOrNull()
-                            latestThread?.let {
-                                navController.navigate(Screen.ChatView.routeWithArgs(threadId = it.id))
-                            }
-                        }
+                composable(Screen.ChatHistory.route) {
+                    ChatHistoryScreen(navController = navController)
+                }
+                composable(
+                    route = Screen.ChatView.chatViewRouteDefinition,
+                    arguments = listOf(navArgument(Screen.ChatView.threadIdArg) {
+                        type = NavType.IntType
+                    })
+                ) { backStackEntry ->
+                    val threadId = backStackEntry.arguments?.getInt(Screen.ChatView.threadIdArg)
+                    if (threadId != null) {
+                        ChatScreen(
+                            navController = navController,
+                            chatSession = chatSessionState,
+                            threadId = threadId
+                        )
+                    } else {
+                        Log.e("AppNavigator", "threadId is null for ChatScreen, navigating back.")
+                        navController.popBackStack()
                     }
-                )
+                }
             }
         }
     }

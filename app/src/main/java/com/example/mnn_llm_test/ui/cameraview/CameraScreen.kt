@@ -9,18 +9,8 @@ import androidx.navigation.NavHostController
  */
 @Composable
 fun CameraScreen(
-    navController: NavHostController,
-    currentScreen: String,
-    hasChatHistory: Boolean,
-    onNavigateToChat: () -> Unit,
-    onNavigateToHistory: () -> Unit
+    navController: NavHostController
 ) {
     // Delegate to the new ARCore-based camera screen
-    ARCameraScreen(
-        navController = navController,
-        currentScreen = currentScreen,
-        hasChatHistory = hasChatHistory,
-        onNavigateToChat = onNavigateToChat,
-        onNavigateToHistory = onNavigateToHistory
-    )
+    ARCameraScreen(navController = navController)
 } 

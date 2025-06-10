@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.mnntest.data.ChatRepository
-import com.example.mnn_llm_test.ui.chatview.SENDER_IMAGE
 import com.example.mnntest.data.ChatMessage
 import com.example.mnntest.data.ChatThread
 import com.example.mnntest.data.ChatThreadImage
