@@ -55,10 +55,11 @@ fun ARCameraScreen(
     navController: NavHostController
 ) {
     // Wrap everything in lifecycle-aware camera management
-    LifecycleAwareCameraView(navController = navController) { isActiveCamera ->
+    LifecycleAwareCameraView(navController = navController) { isActiveCamera, onCameraActiveChanged ->
         ARCameraContent(
             navController = navController,
-            isActiveCamera = isActiveCamera
+            isActiveCamera = isActiveCamera,
+            onCameraActiveChanged = onCameraActiveChanged
         )
     }
 }
@@ -66,7 +67,8 @@ fun ARCameraScreen(
 @Composable
 private fun ARCameraContent(
     navController: NavHostController,
-    isActiveCamera: Boolean
+    isActiveCamera: Boolean,
+    onCameraActiveChanged: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -94,12 +96,25 @@ private fun ARCameraContent(
     }
 
     // Handle ARCore lifecycle based on camera active state
-    LaunchedEffect(isActiveCamera) {
+    LaunchedEffect(isActiveCamera, renderer) {
         if (isActiveCamera) {
             Log.d("ARCameraScreen", "🟢 Camera activated - initializing ARCore")
+            // Signal renderer that camera is active
+            renderer?.let { 
+                Log.d("ARCameraScreen", "📡 Renderer found, setting camera active to true")
+                it.setCameraActive(true) 
+            } ?: run {
+                Log.d("ARCameraScreen", "⚠️ Renderer is null, will set active state when available")
+            }
         } else {
-            Log.d("ARCameraScreen", "🔴 Camera deactivated - cleaning up ARCore")
-            // Cleanup happens automatically through lifecycle observers
+            Log.d("ARCameraScreen", "🔴 Camera deactivated - signaling renderer to stop")
+            // Immediately notify renderer to stop processing
+            renderer?.let { 
+                Log.d("ARCameraScreen", "📡 Renderer found, setting camera active to false")
+                it.setCameraActive(false) 
+            } ?: run {
+                Log.d("ARCameraScreen", "⚠️ Renderer is null, but camera should be inactive anyway")
+            }
         }
     }
 
@@ -162,6 +177,10 @@ private fun ARCameraContent(
                         onArCoreSessionCreated = { helper, rendererInstance ->
                             arCoreSessionHelper = helper
                             renderer = rendererInstance
+                            
+                            // Set the initial camera state based on current isActiveCamera value
+                            Log.d("ARCameraScreen", "🎯 Renderer created, setting initial camera active state: $isActiveCamera")
+                            rendererInstance.setCameraActive(isActiveCamera)
                         }
                     )
                 }
@@ -291,6 +310,9 @@ fun ARCameraView(
                 
                 glSurfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
                 glSurfaceView.preserveEGLContextOnPause = true
+                
+                // Give renderer access to GLSurfaceView for render mode control
+                renderer.setGLSurfaceView(glSurfaceView)
                 
                 // Setup touch listener for capture on the overlay (so it doesn't interfere with GLSurfaceView)
                 boundingBoxOverlay.setOnTouchListener { _, event ->

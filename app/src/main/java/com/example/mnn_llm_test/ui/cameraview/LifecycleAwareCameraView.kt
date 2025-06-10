@@ -16,7 +16,7 @@ import com.example.mnn_llm_test.navigation.Screen
 @Composable
 fun LifecycleAwareCameraView(
     navController: NavHostController,
-    content: @Composable (isActiveCamera: Boolean) -> Unit
+    content: @Composable (isActiveCamera: Boolean, onCameraActiveChanged: (Boolean) -> Unit) -> Unit
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -26,6 +26,16 @@ fun LifecycleAwareCameraView(
     val isCameraRoute = currentRoute == Screen.CameraView.route
     var isCameraActive by remember { mutableStateOf(isCameraRoute) }
     
+    // Callback to immediately notify renderer of state changes
+    val onCameraActiveChanged = remember {
+        { active: Boolean ->
+            if (isCameraActive != active) {
+                Log.d("LifecycleAwareCameraView", if (active) "🟢 Camera activated" else "🔴 Camera deactivated")
+                isCameraActive = active
+            }
+        }
+    }
+    
     // Lifecycle observer to handle pause/resume based on navigation
     DisposableEffect(currentRoute) {
         val observer = LifecycleEventObserver { _, event ->
@@ -33,13 +43,14 @@ fun LifecycleAwareCameraView(
                 Lifecycle.Event.ON_RESUME -> {
                     if (isCameraRoute) {
                         Log.d("LifecycleAwareCameraView", "🟢 Camera route active - enabling camera")
-                        isCameraActive = true
+                        onCameraActiveChanged(true)
                     }
                 }
                 Lifecycle.Event.ON_PAUSE -> {
+                    Log.d("LifecycleAwareCameraView", "⏸️ Lifecycle pause - checking camera state")
                     if (!isCameraRoute) {
                         Log.d("LifecycleAwareCameraView", "🔴 Camera route inactive - disabling camera")
-                        isCameraActive = false
+                        onCameraActiveChanged(false)
                     }
                 }
                 else -> {}
@@ -53,20 +64,20 @@ fun LifecycleAwareCameraView(
         }
     }
     
-    // Immediate route change handling
+    // Immediate route change handling - this is the key for instant response
     LaunchedEffect(currentRoute) {
         when {
             isCameraRoute -> {
-                Log.d("LifecycleAwareCameraView", "📷 Navigated to camera - activating")
-                isCameraActive = true
+                Log.d("LifecycleAwareCameraView", "📷 Navigated to camera - activating immediately")
+                onCameraActiveChanged(true)
             }
             else -> {
-                Log.d("LifecycleAwareCameraView", "🚫 Navigated away from camera - deactivating")
-                isCameraActive = false
+                Log.d("LifecycleAwareCameraView", "🚫 Navigated away from camera - deactivating immediately")
+                onCameraActiveChanged(false)
             }
         }
     }
     
-    // Provide the camera active state to content
-    content(isCameraActive)
+    // Provide the camera active state and callback to content
+    content(isCameraActive, onCameraActiveChanged)
 } 

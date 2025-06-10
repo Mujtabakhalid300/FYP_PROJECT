@@ -66,6 +66,10 @@ class ARCameraRenderer(
     
     // Capture state
     private var shouldCapture = false
+    
+    // Camera active state for immediate control
+    private var isCameraActiveForRendering = true
+    private var glSurfaceView: android.opengl.GLSurfaceView? = null
 
     data class DepthData(
         val buffer: ByteArray,
@@ -113,18 +117,28 @@ class ARCameraRenderer(
         currentDepthData = null
         currentFrame = null
         
-        // Cancel detector scope and wait a bit for cleanup
+        // Cancel detector scope and wait for completion to prevent crashes
+        Log.d(TAG, "🛑 Canceling detector scope...")
         detectorScope.cancel()
+        
+        // Wait a moment for running coroutines to finish
+        try {
+            Thread.sleep(50) // Brief wait to allow coroutines to check cancellation
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
         
         // Clear overlay
         mainHandler.post {
             onDetectionUpdate?.invoke(emptyList())
         }
         
-        // Clean up detector
+        // Clean up detector with proper synchronization
         if (::liteRTDetector.isInitialized) {
             try {
+                Log.d(TAG, "🧹 Closing TensorFlow Lite detector...")
                 liteRTDetector.close()
+                Log.d(TAG, "✅ TensorFlow Lite detector closed successfully")
             } catch (e: Exception) {
                 Log.w(TAG, "Error closing detector: ${e.message}")
             }
@@ -188,6 +202,12 @@ class ARCameraRenderer(
     }
 
     override fun onDrawFrame(render: SampleRender) {
+        // Early exit if camera is not active for rendering
+        if (!isCameraActiveForRendering) {
+            Log.d(TAG, "⚡ onDrawFrame: Camera inactive, skipping frame")
+            return
+        }
+        
         val session = session ?: return
 
         if (!hasSetTextureNames) {
@@ -267,7 +287,7 @@ class ARCameraRenderer(
      */
     private fun processObjectDetection(frame: Frame) {
         frameCounter++
-        if (frameCounter % detectionInterval != 0 || !isDetectorInitialized || !detectorScope.isActive) {
+        if (frameCounter % detectionInterval != 0 || !isDetectorInitialized || !detectorScope.isActive || !isCameraActiveForRendering) {
             return
         }
 
@@ -275,19 +295,25 @@ class ARCameraRenderer(
 
         detectorScope.launch {
             try {
-                // Check if scope is still active before processing
-                if (!isActive) return@launch
+                // Check if scope is still active and camera is still active before processing
+                if (!isActive || !isCameraActiveForRendering) return@launch
                 
                 val bitmap = frameProcessor.frameToBitmap(frame)
-                if (bitmap != null && isActive) {
+                if (bitmap != null && isActive && isCameraActiveForRendering) {
                     // Save YOLO input image for debugging (every 10th detection frame)
                     // if (frameCounter % (detectionInterval * 10) == 0) {
                     //     saveYoloInputImage(bitmap)
                     // }
                     
+                    // Double-check before calling TensorFlow Lite
+                    if (!isActive || !isCameraActiveForRendering) {
+                        bitmap.recycle()
+                        return@launch
+                    }
+                    
                     val detections = liteRTDetector.detectObjects(bitmap)
                     
-                    if (detections.isNotEmpty() && isActive) {
+                    if (detections.isNotEmpty() && isActive && isCameraActiveForRendering) {
                         val depthInfo = getDepthInfoForDetections(detections, depthDataSnapshot)
                         
                         val detectionsWithDepth = detections.mapIndexed { index, detection ->
@@ -296,7 +322,7 @@ class ARCameraRenderer(
                         }
                         
                         withContext(Dispatchers.Main) {
-                            if (isActive) {
+                            if (isActive && isCameraActiveForRendering) {
                                 currentDetectionResults = detectionsWithDepth
                                 
                                 // Update overlay callback if provided
@@ -315,7 +341,7 @@ class ARCameraRenderer(
                         }
                     } else {
                         withContext(Dispatchers.Main) {
-                            if (isActive) {
+                            if (isActive && isCameraActiveForRendering) {
                                 currentDetectionResults = null
                                 onDetectionUpdate?.invoke(emptyList())
                                 
@@ -462,6 +488,69 @@ class ARCameraRenderer(
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error saving YOLO input image", e)
+        }
+    }
+    
+    /**
+     * Set GLSurfaceView reference for render mode control
+     */
+    fun setGLSurfaceView(surfaceView: android.opengl.GLSurfaceView) {
+        this.glSurfaceView = surfaceView
+    }
+    
+    /**
+     * Set camera active state for immediate control over rendering
+     */
+    fun setCameraActive(active: Boolean) {
+        Log.d(TAG, if (active) "🟢 Renderer: Camera activated" else "🔴 Renderer: Camera deactivated")
+        isCameraActiveForRendering = active
+        
+        if (!active) {
+            // Immediately stop all detection processing
+            isDetectorInitialized = false
+            currentDetectionResults = null
+            currentDepthData = null
+            currentFrame = null
+            
+            // Cancel any running YOLO detection coroutines immediately
+            Log.d(TAG, "🛑 Canceling YOLO detector scope for navigation...")
+            if (detectorScope.isActive) {
+                detectorScope.cancel()
+                // Create new scope for when camera becomes active again
+                detectorScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+                Log.d(TAG, "🔄 Created new detector scope")
+            }
+            
+            // Clear overlay
+            mainHandler.post {
+                onDetectionUpdate?.invoke(emptyList())
+            }
+            
+            // Change GLSurfaceView to render on demand to reduce frame calls
+            glSurfaceView?.let { surfaceView ->
+                activity.runOnUiThread {
+                    surfaceView.renderMode = android.opengl.GLSurfaceView.RENDERMODE_WHEN_DIRTY
+                    Log.d(TAG, "🛑 GLSurfaceView set to RENDERMODE_WHEN_DIRTY")
+                }
+            }
+            
+            Log.d(TAG, "🛑 Camera renderer fully stopped - no more frame processing")
+        } else {
+            // Resume continuous rendering
+            glSurfaceView?.let { surfaceView ->
+                activity.runOnUiThread {
+                    surfaceView.renderMode = android.opengl.GLSurfaceView.RENDERMODE_CONTINUOUSLY
+                    Log.d(TAG, "🚀 GLSurfaceView set to RENDERMODE_CONTINUOUSLY")
+                }
+            }
+            
+            // Reinitialize detector if needed when becoming active
+            if (!isDetectorInitialized) {
+                Log.d(TAG, "🔄 Reinitializing detector on camera activation...")
+                initializeLiteRTDetector()
+            }
+            
+            Log.d(TAG, "🚀 Camera renderer activated - resuming frame processing")
         }
     }
 } 
