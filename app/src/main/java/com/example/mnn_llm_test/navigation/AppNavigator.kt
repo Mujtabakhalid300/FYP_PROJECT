@@ -17,12 +17,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.mnn_llm_test.MnnLlmJni
-import com.example.mnn_llm_test.ui.mainmenu.MainMenuScreen
 import com.example.mnn_llm_test.ui.cameraview.CameraScreen
-// import com.example.mnn_llm_test.ui.cameraview.CameraViewModel // Will add later
 import com.example.mnn_llm_test.ui.chatview.ChatScreen
-// import com.example.mnn_llm_test.ui.chatview.ChatViewModel // Will add later
+import com.example.mnn_llm_test.ui.chathistory.ChatHistoryScreen
 import com.example.mnn_llm_test.ui.WelcomeScreen
+import com.example.mnntest.ChatApplication
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -43,6 +42,16 @@ fun AppNavigator(
     chatSessionState: MnnLlmJni.ChatSession?, // Pass the loaded chat session
     isModelLoading: Boolean // Pass the loading state
 ) {
+    val context = LocalContext.current
+    val repository = (context.applicationContext as ChatApplication).repository
+    
+    // Track if there are any chat threads for enabling/disabling buttons
+    val allChatThreads by repository.getAllChatThreads().collectAsState(initial = emptyList())
+    val hasChatHistory = allChatThreads.isNotEmpty()
+    
+    // Get current route for bottom navigation highlighting
+    val currentRoute = navController.currentDestination?.route ?: Screen.CameraView.route
+    
     if (isModelLoading) {
          Scaffold(
              modifier = Modifier.fillMaxSize().systemBarsPadding(),
@@ -54,38 +63,80 @@ fun AppNavigator(
             )
         }
     } else {
-        NavHost(navController = navController, startDestination = Screen.MainMenu.route) {
-            composable(Screen.MainMenu.route) {
-                MainMenuScreen(navController = navController)
-            }
+        NavHost(navController = navController, startDestination = Screen.CameraView.route) {
             composable(Screen.CameraView.route) {
-                // val cameraViewModel: CameraViewModel = viewModel() // Initialize when ViewModel is created
-                CameraScreen(navController = navController /*, viewModel = cameraViewModel */)
+                CameraScreen(
+                    navController = navController,
+                    currentScreen = "camera_view",
+                    hasChatHistory = hasChatHistory,
+                    onNavigateToChat = {
+                        if (hasChatHistory) {
+                            // Navigate to the most recent chat
+                            val latestThread = allChatThreads.firstOrNull()
+                            latestThread?.let {
+                                navController.navigate(Screen.ChatView.routeWithArgs(threadId = it.id))
+                            }
+                        }
+                    },
+                    onNavigateToHistory = {
+                        if (hasChatHistory) {
+                            navController.navigate(Screen.ChatHistory.route)
+                        }
+                    }
+                )
             }
+            
             composable(
-                route = Screen.MainMenu.chatViewRouteDefinition, // Uses the updated definition from Screen object
-                arguments = listOf(navArgument(Screen.ChatView.threadIdArg) { // Changed to threadIdArg
-                    type = NavType.IntType // Changed to IntType
-                    // nullable = true // threadId should not be nullable for ChatScreen
-                    // defaultValue = null
+                route = Screen.ChatView.chatViewRouteDefinition,
+                arguments = listOf(navArgument(Screen.ChatView.threadIdArg) {
+                    type = NavType.IntType
                 })
-            ) {
-                backStackEntry ->
+            ) { backStackEntry ->
                 val threadId = backStackEntry.arguments?.getInt(Screen.ChatView.threadIdArg)
-                // val imagePathEncoded = backStackEntry.arguments?.getString(Screen.ChatView.imagePathArg)
-                // val imagePathDecoded = imagePathEncoded?.let { Uri.decode(it) }
-                if (threadId != null) { // Ensure threadId is present
+                if (threadId != null) {
                     ChatScreen(
                         navController = navController,
                         chatSession = chatSessionState,
-                        // imagePath = imagePathDecoded // Will be fetched via threadId
-                        threadId = threadId // Pass threadId
+                        threadId = threadId,
+                        currentScreen = "chat_view",
+                        hasChatHistory = hasChatHistory,
+                        onNavigateToCamera = {
+                            navController.navigate(Screen.CameraView.route) {
+                                popUpTo(Screen.CameraView.route) { inclusive = true }
+                            }
+                        },
+                        onNavigateToHistory = {
+                            if (hasChatHistory) {
+                                navController.navigate(Screen.ChatHistory.route)
+                            }
+                        }
                     )
                 } else {
-                    // Handle error: threadId is null. Maybe navigate back or show an error.
                     Log.e("AppNavigator", "threadId is null for ChatScreen, navigating back.")
                     navController.popBackStack()
                 }
+            }
+            
+            composable(Screen.ChatHistory.route) {
+                ChatHistoryScreen(
+                    navController = navController,
+                    currentScreen = "chat_history",
+                    hasChatHistory = hasChatHistory,
+                    onNavigateToCamera = {
+                        navController.navigate(Screen.CameraView.route) {
+                            popUpTo(Screen.CameraView.route) { inclusive = true }
+                        }
+                    },
+                    onNavigateToChat = {
+                        if (hasChatHistory) {
+                            // Navigate to the most recent chat
+                            val latestThread = allChatThreads.firstOrNull()
+                            latestThread?.let {
+                                navController.navigate(Screen.ChatView.routeWithArgs(threadId = it.id))
+                            }
+                        }
+                    }
+                )
             }
         }
     }

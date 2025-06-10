@@ -30,6 +30,7 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.navigation.NavHostController
 import com.example.mnn_llm_test.navigation.Screen
+import com.example.mnn_llm_test.ui.BottomNavigationStrip
 import com.example.mnntest.ChatApplication
 import com.example.mnntest.data.ChatThread
 import com.example.mnntest.data.ChatThreadImage
@@ -52,7 +53,11 @@ import com.example.mnn_llm_test.arcore.ARCameraRenderer
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ARCameraScreen(
-    navController: NavHostController
+    navController: NavHostController,
+    currentScreen: String,
+    hasChatHistory: Boolean,
+    onNavigateToChat: () -> Unit,
+    onNavigateToHistory: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -82,12 +87,16 @@ fun ARCameraScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("AR Camera View") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to Menu")
-                    }
-                }
+                title = { Text("AR Camera View") }
+            )
+        },
+        bottomBar = {
+            BottomNavigationStrip(
+                currentScreen = currentScreen,
+                hasChatHistory = hasChatHistory,
+                onCameraClick = { /* Already on camera */ },
+                onChatClick = onNavigateToChat,
+                onHistoryClick = onNavigateToHistory
             )
         }
     ) { paddingValues ->

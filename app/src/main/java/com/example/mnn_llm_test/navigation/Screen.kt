@@ -1,7 +1,6 @@
 package com.example.mnn_llm_test.navigation
 
 sealed class Screen(val route: String) {
-    object MainMenu : Screen("main_menu")
     object CameraView : Screen("camera_view")
     object ChatView : Screen("chat_view") {
         fun routeWithArgs(threadId: Int): String {
@@ -9,6 +8,7 @@ sealed class Screen(val route: String) {
         }
         const val threadIdArg = "threadId"
     }
+    object ChatHistory : Screen("chat_history")
 
     // Static route definition for NavHost
     val chatViewRouteDefinition: String = "chat_view?threadId={${ChatView.threadIdArg}}"
