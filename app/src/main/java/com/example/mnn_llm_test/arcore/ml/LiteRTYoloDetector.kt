@@ -25,9 +25,6 @@ import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.max
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 
 // TensorFlow Lite imports (bridge to LiteRT)
 import org.tensorflow.lite.Interpreter
@@ -92,11 +89,6 @@ class LiteRTYoloDetector(private val context: Context) {
     private var offsetX: Float = 0.0f
     private var offsetY: Float = 0.0f
     
-    // 🔒 Synchronization for rapid navigation crash prevention
-    private val initializationLock = ReentrantLock()
-    private val isInitializing = AtomicBoolean(false)
-    private val isCleanedUp = AtomicBoolean(false)
-    
     data class Detection(
         val classId: Int,
         val className: String,
@@ -109,117 +101,73 @@ class LiteRTYoloDetector(private val context: Context) {
     
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         try {
-            // 🛡️ CRITICAL: Prevent overlapping initialization calls
-            if (!isInitializing.compareAndSet(false, true)) {
-                Log.w(TAG, "⚠️ Initialization already in progress, skipping...")
+            val modelExists = try {
+                context.assets.open(MODEL_FILENAME).use { true }
+            } catch (e: IOException) {
+                false
+            }
+            
+            if (!modelExists) {
+                Log.w(TAG, "YOLO model file '$MODEL_FILENAME' not found in assets.")
                 return@withContext false
             }
             
-            initializationLock.withLock {
-                // Double-check if we've been cleaned up during waiting
-                if (isCleanedUp.get()) {
-                    Log.w(TAG, "🚫 Detector was cleaned up during initialization wait")
-                    return@withContext false
-                }
+            val modelFile = FileUtil.loadMappedFile(context, MODEL_FILENAME)
+            
+            // Initialize GPU delegate with proper compatibility checking
+            val compatList = CompatibilityList()
+            val options = Interpreter.Options().apply {
+                setNumThreads(NUM_THREADS)
                 
-                // Check for cancellation before expensive operations
-                ensureActive()
-                
-                val modelExists = try {
-                    context.assets.open(MODEL_FILENAME).use { true }
-                } catch (e: IOException) {
-                    false
-                }
-                
-                if (!modelExists) {
-                    Log.w(TAG, "YOLO model file '$MODEL_FILENAME' not found in assets.")
-                    return@withContext false
-                }
-                
-                // Check cancellation before loading model file (expensive operation)
-                ensureActive()
-                
-                val modelFile = FileUtil.loadMappedFile(context, MODEL_FILENAME)
-                
-                // Check cancellation before TensorFlow Lite initialization
-                ensureActive()
-                
-                // Initialize GPU delegate with proper compatibility checking
-                val compatList = CompatibilityList()
-                val options = Interpreter.Options().apply {
-                    setNumThreads(NUM_THREADS)
-                    
-                    if (compatList.isDelegateSupportedOnThisDevice) {
-                        // GPU acceleration available - use the best options for this device
-                        try {
-                            // Check cancellation before GPU delegate creation
-                            ensureActive()
-                            
-                            val delegateOptions = compatList.bestOptionsForThisDevice
-                            gpuDelegate = GpuDelegate(delegateOptions)
-                            addDelegate(gpuDelegate!!)
-                            Log.d(TAG, "GPU delegate added successfully - hardware acceleration enabled")
-                            isUsingGpu = true
-                            backendInfo = "GPU"
-                        } catch (e: Exception) {
-                            if (e is CancellationException) throw e
-                            Log.w(TAG, "Failed to initialize GPU delegate, falling back to CPU: ${e.message}")
-                            gpuDelegate?.close()
-                            gpuDelegate = null
-                            isUsingGpu = false
-                            backendInfo = "CPU"
-                            // CPU fallback is automatic if GPU delegate fails
-                        }
-                    } else {
-                        // GPU not supported - use multi-threaded CPU execution
-                        Log.d(TAG, "GPU delegate not supported on this device, using CPU with $NUM_THREADS threads")
+                if (compatList.isDelegateSupportedOnThisDevice) {
+                    // GPU acceleration available - use the best options for this device
+                    try {
+                        val delegateOptions = compatList.bestOptionsForThisDevice
+                        gpuDelegate = GpuDelegate(delegateOptions)
+                        addDelegate(gpuDelegate!!)
+                        Log.d(TAG, "GPU delegate added successfully - hardware acceleration enabled")
+                        isUsingGpu = true
+                        backendInfo = "GPU"
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+                        Log.w(TAG, "Failed to initialize GPU delegate, falling back to CPU: ${e.message}")
+                        gpuDelegate?.close()
+                        gpuDelegate = null
                         isUsingGpu = false
                         backendInfo = "CPU"
+                        // CPU fallback is automatic if GPU delegate fails
                     }
-                    
-                    // Disable NNAPI as it's deprecated and can cause issues
-                    setUseNNAPI(false)
+                } else {
+                    // GPU not supported - use multi-threaded CPU execution
+                    Log.d(TAG, "GPU delegate not supported on this device, using CPU with $NUM_THREADS threads")
+                    isUsingGpu = false
+                    backendInfo = "CPU"
                 }
                 
-                // 🚨 CRITICAL: Final cancellation check before TensorFlow Lite interpreter creation
-                // This is where most crashes occur during rapid navigation
-                ensureActive()
-                if (isCleanedUp.get()) {
-                    Log.w(TAG, "🚫 Cleaned up before interpreter creation, aborting")
-                    return@withContext false
-                }
-                
-                // Create interpreter with cancellation protection
-                interpreter = try {
-                    Log.d(TAG, "🔧 Creating TensorFlow Lite interpreter...")
-                    Interpreter(modelFile, options)
-                } catch (e: Exception) {
-                    if (e is CancellationException || isCleanedUp.get()) {
-                        Log.w(TAG, "🚫 Interpreter creation cancelled or cleaned up")
-                        throw CancellationException("Interpreter creation cancelled")
-                    }
-                    throw e
-                }
-                
-                // Check cancellation after interpreter creation
-                ensureActive()
-                if (isCleanedUp.get()) {
-                    Log.w(TAG, "🚫 Cleaned up after interpreter creation, cleaning up interpreter")
-                    interpreter?.close()
-                    interpreter = null
-                    return@withContext false
-                }
-                
-                initializeBuffers()
-                
-                isModelInitialized = true
-                Log.d(TAG, "LiteRT YOLO model initialized successfully")
-                
-                // Log final backend configuration
-                Log.i(TAG, "🚀 YOLO Detector Ready - Backend: $backendInfo | GPU Enabled: $isUsingGpu")
-                true
+                // Disable NNAPI as it's deprecated and can cause issues
+                setUseNNAPI(false)
             }
             
+            // Create interpreter with cancellation protection
+            interpreter = try {
+                Log.d(TAG, "🔧 Creating TensorFlow Lite interpreter...")
+                Interpreter(modelFile, options)
+            } catch (e: Exception) {
+                if (e is CancellationException) {
+                    Log.w(TAG, "🚫 Interpreter creation cancelled")
+                    throw CancellationException("Interpreter creation cancelled")
+                }
+                throw e
+            }
+            
+            initializeBuffers()
+            
+            isModelInitialized = true
+            Log.d(TAG, "LiteRT YOLO model initialized successfully")
+            
+            // Log final backend configuration
+            Log.i(TAG, "🚀 YOLO Detector Ready - Backend: $backendInfo | GPU Enabled: $isUsingGpu")
+            true
         } catch (e: CancellationException) {
             Log.i(TAG, "🚫 YOLO initialization cancelled (expected during rapid navigation)")
             cleanup()
@@ -228,8 +176,6 @@ class LiteRTYoloDetector(private val context: Context) {
             Log.e(TAG, "Failed to initialize LiteRT YOLO model", e)
             cleanup()
             false
-        } finally {
-            isInitializing.set(false)
         }
     }
     
@@ -247,43 +193,30 @@ class LiteRTYoloDetector(private val context: Context) {
     }
     
     suspend fun detectObjects(bitmap: Bitmap): List<Detection> = withContext(Dispatchers.Default) {
-        // 🛡️ CRITICAL: Prevent detection on cleaned up detector
-        if (isCleanedUp.get() || !isModelInitialized || interpreter == null) {
+        // ✅ Simple check - global detector is always initialized after app startup
+        if (!isModelInitialized || interpreter == null) {
             return@withContext emptyList<Detection>()
         }
         
         try {
-            // Check cancellation before expensive operations
-            ensureActive()
-            
             inferenceCount++
             
             if (inferenceCount % BUFFER_REFRESH_INTERVAL == 0) {
                 refreshBuffers()
             }
             
-            // Check if buffers are still available after refresh
-            if (inputBuffer == null || outputBuffer == null || isCleanedUp.get()) {
-                Log.w(TAG, "❌ Buffers not properly initialized after refresh or detector cleaned up")
+            // Basic buffer safety check
+            if (inputBuffer == null || outputBuffer == null) {
+                Log.w(TAG, "❌ Buffers not initialized")
                 return@withContext emptyList<Detection>()
             }
-            
-            // Check cancellation before preprocessing
-            ensureActive()
             
             preprocessImage(bitmap)
-            
-            // Check cancellation before inference
-            ensureActive()
-            if (isCleanedUp.get()) {
-                return@withContext emptyList<Detection>()
-            }
-            
             runInference()
             return@withContext parseResults()
             
         } catch (e: CancellationException) {
-            Log.d(TAG, "🚫 Detection cancelled (expected during navigation)")
+            Log.d(TAG, "🚫 Detection cancelled")
             return@withContext emptyList()
         } catch (e: Exception) {
             Log.e(TAG, "Error during detection", e)
@@ -492,31 +425,26 @@ class LiteRTYoloDetector(private val context: Context) {
     }
     
     private fun cleanup() {
-        initializationLock.withLock {
-            // Mark as cleaned up immediately to prevent further operations
-            isCleanedUp.set(true)
-            
-            inputBuffer?.clear()
-            outputBuffer?.clear()
-            inputBuffer = null
-            outputBuffer = null
-            interpreter?.close()
-            interpreter = null
-            gpuDelegate?.close()
-            gpuDelegate = null
-            coroutineScope.cancel()
-            isModelInitialized = false
-            
-            Log.d(TAG, "🧹 LiteRT YOLO detector resources cleaned up")
-        }
+        inputBuffer?.clear()
+        outputBuffer?.clear()
+        inputBuffer = null
+        outputBuffer = null
+        interpreter?.close()
+        interpreter = null
+        gpuDelegate?.close()
+        gpuDelegate = null
+        coroutineScope.cancel()
+        isModelInitialized = false
+        
+        Log.d(TAG, "🧹 LiteRT YOLO detector resources cleaned up")
     }
     
     // Public method to get current backend status
     fun getBackendInfo(): String {
-        return if (isModelInitialized && !isCleanedUp.get()) {
+        return if (isModelInitialized) {
             "Backend: $backendInfo | GPU Acceleration: ${if (isUsingGpu) "✅ Enabled" else "❌ Disabled"}"
         } else {
-            "Model not initialized or cleaned up"
+            "Model not initialized"
         }
     }
     

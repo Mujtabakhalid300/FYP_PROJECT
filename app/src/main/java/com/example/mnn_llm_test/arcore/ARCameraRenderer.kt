@@ -250,16 +250,16 @@ class ARCameraRenderer(
         // 🚀 Simple async detection - no complex scope management
         detectionScope.launch {
             try {
-                // Early cancellation check
+                // Single activity check at start
                 if (!isActive || !isCameraActiveForRendering) return@launch
                 
                 val bitmap = frameProcessor.frameToBitmap(frame)
-                if (bitmap != null && isActive && isCameraActiveForRendering) {
+                if (bitmap != null) {
                     
                     // 🎯 Use global detector - no initialization needed!
                     val detections = globalDetector.detectObjects(bitmap)
                     
-                    if (detections.isNotEmpty() && isActive && isCameraActiveForRendering) {
+                    if (detections.isNotEmpty()) {
                         val depthInfo = getDepthInfoForDetections(detections, depthDataSnapshot)
                         
                         val detectionsWithDepth = detections.mapIndexed { index, detection ->
@@ -268,7 +268,8 @@ class ARCameraRenderer(
                         }
                         
                         withContext(Dispatchers.Main) {
-                            if (isActive && isCameraActiveForRendering) {
+                            // Final check before UI update
+                            if (isCameraActiveForRendering) {
                                 currentDetectionResults = detectionsWithDepth
                                 onDetectionUpdate?.invoke(detectionsWithDepth)
                             
@@ -285,7 +286,7 @@ class ARCameraRenderer(
                         }
                     } else {
                         withContext(Dispatchers.Main) {
-                            if (isActive && isCameraActiveForRendering) {
+                            if (isCameraActiveForRendering) {
                                 currentDetectionResults = null
                                 onDetectionUpdate?.invoke(emptyList())
                                 
