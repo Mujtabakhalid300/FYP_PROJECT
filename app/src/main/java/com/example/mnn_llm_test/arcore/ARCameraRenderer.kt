@@ -16,6 +16,7 @@ import com.example.mnn_llm_test.arcore.common.samplerender.SampleRender
 import com.example.mnn_llm_test.arcore.common.samplerender.arcore.BackgroundRenderer
 import com.example.mnn_llm_test.arcore.ml.LiteRTYoloDetector
 import com.example.mnn_llm_test.arcore.ml.FrameProcessor
+import com.example.mnn_llm_test.MainActivity
 import kotlinx.coroutines.*
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -46,13 +47,12 @@ class ARCameraRenderer(
     lateinit var backgroundRenderer: BackgroundRenderer
     private var hasSetTextureNames = false
 
-    // Object detection components
-    private lateinit var liteRTDetector: LiteRTYoloDetector
+    // 🎯 Simplified object detection - using global detector
     private lateinit var frameProcessor: FrameProcessor
-    private var isDetectorInitialized = false
     private var frameCounter = 0
     private val detectionInterval = 10 // Run detection every N frames
-    private var detectorScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    // Single, persistent coroutine scope for detections
+    private val detectionScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     // Depth data for object detection
     private var currentDepthData: DepthData? = null
@@ -98,91 +98,36 @@ class ARCameraRenderer(
         currentDetectionResults = null
         frameCounter = 0
         
-        Log.d(TAG, "🚀 AR Camera resumed - initializing detector")
+        Log.d(TAG, "🚀 AR Camera resumed")
         
-        // Initialize object detector
-        initializeLiteRTDetector()
+        // 🎯 Simple initialization - just create frame processor
+        frameProcessor = FrameProcessor()
+        
+        // Check if global YOLO detector is ready
+        val globalDetector = MainActivity.globalYoloDetector
+        if (globalDetector != null) {
+            Log.d(TAG, "✅ Global YOLO detector available and ready")
+        } else {
+            Log.w(TAG, "⚠️ Global YOLO detector not yet available")
+        }
     }
 
     override fun onPause(owner: LifecycleOwner) {
         displayRotationHelper.onPause()
         
-        Log.d(TAG, "⏸️ AR Camera pausing - starting cleanup")
+        Log.d(TAG, "⏸️ AR Camera pausing")
         
-        // Immediately mark detector as uninitialized to stop new detections
-        isDetectorInitialized = false
-        
-        // Clear detection state
+        // 🎯 Simple cleanup - no complex detector management needed
         currentDetectionResults = null
         currentDepthData = null
         currentFrame = null
-        
-        // Cancel detector scope and wait for completion to prevent crashes
-        Log.d(TAG, "🛑 Canceling detector scope...")
-        detectorScope.cancel()
-        
-        // Wait a moment for running coroutines to finish
-        try {
-            Thread.sleep(50) // Brief wait to allow coroutines to check cancellation
-        } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
-        }
         
         // Clear overlay
         mainHandler.post {
             onDetectionUpdate?.invoke(emptyList())
         }
         
-        // Clean up detector with proper synchronization
-        if (::liteRTDetector.isInitialized) {
-            try {
-                Log.d(TAG, "🧹 Closing TensorFlow Lite detector...")
-                liteRTDetector.close()
-                Log.d(TAG, "✅ TensorFlow Lite detector closed successfully")
-            } catch (e: Exception) {
-                Log.w(TAG, "Error closing detector: ${e.message}")
-            }
-        }
-        
-        Log.d(TAG, "✅ AR Camera paused - detector cleanup complete")
-    }
-
-    /**
-     * Initialize LiteRT object detector
-     */
-    private fun initializeLiteRTDetector() {
-        try {
-            if (detectorScope.isActive) {
-                detectorScope.cancel()
-            }
-            
-            val newDetectorScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-            
-            liteRTDetector = LiteRTYoloDetector(activity)
-            frameProcessor = FrameProcessor()
-            
-            Log.d(TAG, "Starting YOLO detector initialization...")
-            
-            newDetectorScope.launch {
-                try {
-                    isDetectorInitialized = liteRTDetector.initialize()
-                    if (isDetectorInitialized) {
-                        Log.d(TAG, "✅ LiteRT detector initialized successfully")
-                    } else {
-                        Log.w(TAG, "❌ Failed to initialize LiteRT detector")
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Error during detector initialization", e)
-                    isDetectorInitialized = false
-                }
-            }
-            
-            this.detectorScope = newDetectorScope
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error setting up LiteRT detector", e)
-            isDetectorInitialized = false
-        }
+        Log.d(TAG, "✅ AR Camera paused - simple cleanup complete")
     }
 
     // SampleRender.Renderer interface implementation
@@ -262,7 +207,7 @@ class ARCameraRenderer(
                 currentDepthData = null
             }
 
-            // Run object detection
+            // 🎯 Simplified object detection
             processObjectDetection(frame)
 
             // Handle capture request
@@ -283,35 +228,36 @@ class ARCameraRenderer(
     }
 
     /**
-     * Process object detection using LiteRT
+     * 🎯 Simplified object detection using global YOLO detector
      */
     private fun processObjectDetection(frame: Frame) {
         frameCounter++
-        if (frameCounter % detectionInterval != 0 || !isDetectorInitialized || !detectorScope.isActive || !isCameraActiveForRendering) {
+        
+        // Skip if not time for detection or camera not active
+        if (frameCounter % detectionInterval != 0 || !isCameraActiveForRendering) {
+            return
+        }
+
+        // Check if global detector is available
+        val globalDetector = MainActivity.globalYoloDetector
+        if (globalDetector == null) {
+            Log.d(TAG, "🔄 Global YOLO detector not ready yet, skipping detection")
             return
         }
 
         val depthDataSnapshot = currentDepthData
 
-        detectorScope.launch {
+        // 🚀 Simple async detection - no complex scope management
+        detectionScope.launch {
             try {
-                // Check if scope is still active and camera is still active before processing
+                // Early cancellation check
                 if (!isActive || !isCameraActiveForRendering) return@launch
                 
                 val bitmap = frameProcessor.frameToBitmap(frame)
                 if (bitmap != null && isActive && isCameraActiveForRendering) {
-                    // Save YOLO input image for debugging (every 10th detection frame)
-                    // if (frameCounter % (detectionInterval * 10) == 0) {
-                    //     saveYoloInputImage(bitmap)
-                    // }
                     
-                    // Double-check before calling TensorFlow Lite
-                    if (!isActive || !isCameraActiveForRendering) {
-                        bitmap.recycle()
-                        return@launch
-                    }
-                    
-                    val detections = liteRTDetector.detectObjects(bitmap)
+                    // 🎯 Use global detector - no initialization needed!
+                    val detections = globalDetector.detectObjects(bitmap)
                     
                     if (detections.isNotEmpty() && isActive && isCameraActiveForRendering) {
                         val depthInfo = getDepthInfoForDetections(detections, depthDataSnapshot)
@@ -324,19 +270,17 @@ class ARCameraRenderer(
                         withContext(Dispatchers.Main) {
                             if (isActive && isCameraActiveForRendering) {
                                 currentDetectionResults = detectionsWithDepth
-                                
-                                // Update overlay callback if provided
                                 onDetectionUpdate?.invoke(detectionsWithDepth)
                             
-                            // Enhanced logging for debugging
-                            Log.d(TAG, "🎯 Detected ${detections.size} objects with depth info:")
-                            detectionsWithDepth.forEachIndexed { index, detectionWithDepth ->
-                                val detection = detectionWithDepth.detection
-                                val distance = detectionWithDepth.distance
-                                Log.d(TAG, "  [$index] Object: ${detection.className} (${String.format("%.2f", detection.confidence * 100)}%) " +
-                                          "at distance: ${distance}mm (${String.format("%.1f", distance / 1000.0)}m) " +
-                                          "bbox: [${detection.x.toInt()}, ${detection.y.toInt()}, ${detection.width.toInt()}, ${detection.height.toInt()}]")
-                            }
+                                // Enhanced logging for debugging
+                                Log.d(TAG, "🎯 Detected ${detections.size} objects with depth info:")
+                                detectionsWithDepth.forEachIndexed { index, detectionWithDepth ->
+                                    val detection = detectionWithDepth.detection
+                                    val distance = detectionWithDepth.distance
+                                    Log.d(TAG, "  [$index] Object: ${detection.className} (${String.format("%.2f", detection.confidence * 100)}%) " +
+                                              "at distance: ${distance}mm (${String.format("%.1f", distance / 1000.0)}m) " +
+                                              "bbox: [${detection.x.toInt()}, ${detection.y.toInt()}, ${detection.width.toInt()}, ${detection.height.toInt()}]")
+                                }
                             }
                         }
                     } else {
@@ -507,19 +451,12 @@ class ARCameraRenderer(
         
         if (!active) {
             // Immediately stop all detection processing
-            isDetectorInitialized = false
             currentDetectionResults = null
             currentDepthData = null
             currentFrame = null
             
-            // Cancel any running YOLO detection coroutines immediately
-            Log.d(TAG, "🛑 Canceling YOLO detector scope for navigation...")
-            if (detectorScope.isActive) {
-                detectorScope.cancel()
-                // Create new scope for when camera becomes active again
-                detectorScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-                Log.d(TAG, "🔄 Created new detector scope")
-            }
+            // 🎯 No complex scope cancellation needed - just stop processing
+            Log.d(TAG, "🛑 Detection processing stopped")
             
             // Clear overlay
             mainHandler.post {
@@ -542,12 +479,6 @@ class ARCameraRenderer(
                     surfaceView.renderMode = android.opengl.GLSurfaceView.RENDERMODE_CONTINUOUSLY
                     Log.d(TAG, "🚀 GLSurfaceView set to RENDERMODE_CONTINUOUSLY")
                 }
-            }
-            
-            // Reinitialize detector if needed when becoming active
-            if (!isDetectorInitialized) {
-                Log.d(TAG, "🔄 Reinitializing detector on camera activation...")
-                initializeLiteRTDetector()
             }
             
             Log.d(TAG, "🚀 Camera renderer activated - resuming frame processing")

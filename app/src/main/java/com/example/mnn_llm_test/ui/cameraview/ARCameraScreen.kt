@@ -29,6 +29,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.navigation.NavHostController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import com.example.mnn_llm_test.navigation.Screen
 import com.example.mnntest.ChatApplication
 import com.example.mnntest.data.ChatThread
@@ -54,21 +55,21 @@ import com.example.mnn_llm_test.arcore.ARCameraRenderer
 fun ARCameraScreen(
     navController: NavHostController
 ) {
-    // Wrap everything in lifecycle-aware camera management
-    LifecycleAwareCameraView(navController = navController) { isActiveCamera, onCameraActiveChanged ->
-        ARCameraContent(
-            navController = navController,
-            isActiveCamera = isActiveCamera,
-            onCameraActiveChanged = onCameraActiveChanged
-        )
-    }
+    // 🎯 Simple navigation detection - no complex binary manager needed
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    val isCameraActive = currentRoute == Screen.CameraView.route
+    
+    ARCameraContent(
+        navController = navController,
+        isCameraActive = isCameraActive
+    )
 }
 
 @Composable
 private fun ARCameraContent(
     navController: NavHostController,
-    isActiveCamera: Boolean,
-    onCameraActiveChanged: (Boolean) -> Unit
+    isCameraActive: Boolean
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -95,26 +96,11 @@ private fun ARCameraContent(
         }
     }
 
-    // Handle ARCore lifecycle based on camera active state
-    LaunchedEffect(isActiveCamera, renderer) {
-        if (isActiveCamera) {
-            Log.d("ARCameraScreen", "🟢 Camera activated - initializing ARCore")
-            // Signal renderer that camera is active
-            renderer?.let { 
-                Log.d("ARCameraScreen", "📡 Renderer found, setting camera active to true")
-                it.setCameraActive(true) 
-            } ?: run {
-                Log.d("ARCameraScreen", "⚠️ Renderer is null, will set active state when available")
-            }
-        } else {
-            Log.d("ARCameraScreen", "🔴 Camera deactivated - signaling renderer to stop")
-            // Immediately notify renderer to stop processing
-            renderer?.let { 
-                Log.d("ARCameraScreen", "📡 Renderer found, setting camera active to false")
-                it.setCameraActive(false) 
-            } ?: run {
-                Log.d("ARCameraScreen", "⚠️ Renderer is null, but camera should be inactive anyway")
-            }
+    // 🎯 Simple camera state management based on navigation
+    LaunchedEffect(isCameraActive, renderer) {
+        renderer?.let { 
+            Log.d("ARCameraScreen", "📡 Setting camera active state to: $isCameraActive")
+            it.setCameraActive(isCameraActive) 
         }
     }
 
@@ -124,7 +110,7 @@ private fun ARCameraContent(
         verticalArrangement = Arrangement.Center
     ) {
         if (hasCameraPermission) {
-            if (isActiveCamera) {
+            if (isCameraActive) {
                 Box(modifier = Modifier.weight(1f)) {
                     ARCameraView(
                         context = context,
@@ -178,9 +164,9 @@ private fun ARCameraContent(
                             arCoreSessionHelper = helper
                             renderer = rendererInstance
                             
-                            // Set the initial camera state based on current isActiveCamera value
-                            Log.d("ARCameraScreen", "🎯 Renderer created, setting initial camera active state: $isActiveCamera")
-                            rendererInstance.setCameraActive(isActiveCamera)
+                            // Set the initial camera state based on current isCameraActive value
+                            Log.d("ARCameraScreen", "🎯 Renderer created, setting initial camera active state: $isCameraActive")
+                            rendererInstance.setCameraActive(isCameraActive)
                         }
                     )
                 }
