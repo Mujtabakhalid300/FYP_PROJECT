@@ -515,48 +515,87 @@ class ARCameraRenderer(
     }
     
     /**
-     * Announce objects on left or right side of screen
+     * Announce all objects organized by left and right side of screen
      */
     fun announceObjectsOnSide(tapX: Float, screenWidth: Float, detections: List<DetectionWithDepth>) {
-        val isLeftSide = tapX < screenWidth / 2
-        val side = if (isLeftSide) "left" else "right"
+        // Stop any ongoing TTS first
+        ttsHelper.stop()
         
-        // Filter detections to the tapped side
-        val sideDetections = detections.filter { detection ->
-            val objCenterX = detection.detection.x + detection.detection.width / 2
-            if (isLeftSide) objCenterX < 0.5f else objCenterX >= 0.5f
-        }
-        
-        if (sideDetections.isEmpty()) {
-            ttsHelper.speak("Nothing detected on your $side")
+        if (detections.isEmpty()) {
+            ttsHelper.speak("No objects detected")
             return
         }
         
-        // Sort by distance (closest first)
-        val sortedDetections = sideDetections.sortedBy { it.distance }
+        // Split detections into left and right sides - simple center point method
+        val leftDetections = detections.filter { detection ->
+            val bbox = detection.detection
+            val centerX = bbox.x + bbox.width / 2
+            centerX < 0.5f  // Left half of screen
+        }.sortedBy { it.distance }
+        
+        val rightDetections = detections.filter { detection ->
+            val bbox = detection.detection
+            val centerX = bbox.x + bbox.width / 2
+            centerX >= 0.5f  // Right half of screen
+        }.sortedBy { it.distance }
         
         val announcement = buildString {
-            append("To your $side you have, ")
-            
-            sortedDetections.forEachIndexed { index, detection ->
-                if (index > 0) append(", ")
-                
-                val distanceText = if (detection.distance > 0) {
-                    if (detection.distance < 1000) {
-                        "${detection.distance} millimeters"
+            // Announce left side objects first
+            if (leftDetections.isNotEmpty()) {
+                append("Objects to your left: ")
+                leftDetections.forEachIndexed { index, detection ->
+                    if (index > 0) append(", ")
+                    
+                    val distanceText = if (detection.distance > 0) {
+                        if (detection.distance < 1000) {
+                            "${detection.distance} millimeters"
+                        } else {
+                            val meters = detection.distance / 1000f
+                            "${String.format("%.1f", meters)} meters"
+                        }
                     } else {
-                        val meters = detection.distance / 1000f
-                        "${String.format("%.1f", meters)} meters"
+                        "unknown distance"
                     }
-                } else {
-                    "unknown distance"
+                    
+                    append("${detection.detection.className} at $distanceText")
                 }
-                
-                append("${detection.detection.className} at $distanceText")
+            }
+            
+            // Add separator if both sides have objects
+            if (leftDetections.isNotEmpty() && rightDetections.isNotEmpty()) {
+                append(". ")
+            }
+            
+            // Announce right side objects
+            if (rightDetections.isNotEmpty()) {
+                append("Objects to your right: ")
+                rightDetections.forEachIndexed { index, detection ->
+                    if (index > 0) append(", ")
+                    
+                    val distanceText = if (detection.distance > 0) {
+                        if (detection.distance < 1000) {
+                            "${detection.distance} millimeters"
+                        } else {
+                            val meters = detection.distance / 1000f
+                            "${String.format("%.1f", meters)} meters"
+                        }
+                    } else {
+                        "unknown distance"
+                    }
+                    
+                    append("${detection.detection.className} at $distanceText")
+                }
+            }
+            
+            // Handle case where all objects are on one side
+            if (leftDetections.isEmpty() && rightDetections.isNotEmpty()) {
+                // Already handled above
+            } else if (rightDetections.isEmpty() && leftDetections.isNotEmpty()) {
+                // Already handled above
             }
         }
         
-        Log.d(TAG, "Announcing: $announcement")
+        Log.d(TAG, "Announcing all objects: $announcement")
         ttsHelper.speak(announcement)
     }
     

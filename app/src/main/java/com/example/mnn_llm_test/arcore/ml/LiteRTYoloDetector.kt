@@ -44,7 +44,7 @@ class LiteRTYoloDetector(private val context: Context) {
         private const val INPUT_SIZE = 640
         private const val NUM_CLASSES = 80
         private const val NUM_THREADS = 4
-        private const val CONFIDENCE_THRESHOLD = 0.3f
+        private const val CONFIDENCE_THRESHOLD = 0.6f
         private const val IOU_THRESHOLD = 0.5f
         
         // Buffer refresh interval to prevent corruption (more frequent for larger models)
