@@ -17,6 +17,7 @@ import com.example.mnn_llm_test.arcore.common.samplerender.arcore.BackgroundRend
 import com.example.mnn_llm_test.arcore.ml.LiteRTYoloDetector
 import com.example.mnn_llm_test.arcore.ml.FrameProcessor
 import com.example.mnn_llm_test.MainActivity
+import com.example.mnn_llm_test.utils.TtsHelper
 import kotlinx.coroutines.*
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -35,7 +36,7 @@ class ARCameraRenderer(
     private val activity: androidx.activity.ComponentActivity,
     private val onCaptureCallback: (Bitmap?) -> Unit,
     private val onDetectionUpdate: ((List<DetectionWithDepth>) -> Unit)? = null
-) : SampleRender.Renderer, DefaultLifecycleObserver {
+) : DefaultLifecycleObserver, SampleRender.Renderer {
     
     companion object {
         private const val TAG = "ARCameraRenderer"
@@ -43,33 +44,39 @@ class ARCameraRenderer(
         private const val Z_FAR = 100f
     }
 
+    // Core rendering components
     lateinit var render: SampleRender
     lateinit var backgroundRenderer: BackgroundRenderer
     private var hasSetTextureNames = false
 
-    // 🎯 Simplified object detection - using global detector
+    // Object detection
     private lateinit var frameProcessor: FrameProcessor
     private var frameCounter = 0
     private val detectionInterval = 10 // Run detection every N frames
-    // Single, persistent coroutine scope for detections
     private val detectionScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-    // Depth data for object detection
-    private var currentDepthData: DepthData? = null
-
-    // Detection results
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private var currentDetectionResults: List<DetectionWithDepth>? = null
+    // Session reference through activity
+    var arCoreSessionHelper: com.example.mnn_llm_test.arcore.common.helpers.ARCoreSessionLifecycleHelper? = null
+    val session get() = arCoreSessionHelper?.session
+    val displayRotationHelper = DisplayRotationHelper(activity)
+    val trackingStateHelper = TrackingStateHelper(activity)
     
-    // Current frame for capture
+    // Depth data and detection results
+    private var currentDepthData: DepthData? = null
+    var currentDetectionResults: List<DetectionWithDepth>? = null
     private var currentFrame: Frame? = null
     
-    // Capture state
+    // State management
     private var shouldCapture = false
-    
-    // Camera active state for immediate control
     private var isCameraActiveForRendering = true
     private var glSurfaceView: android.opengl.GLSurfaceView? = null
+    
+    // UI and accessibility
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val ttsHelper = TtsHelper(activity)
+    
+    // Scene change detection
+    private var lastDetectionCount = 0
 
     data class DepthData(
         val buffer: ByteArray,
@@ -83,12 +90,6 @@ class ARCameraRenderer(
         val detection: LiteRTYoloDetector.Detection,
         val distance: Int // Distance in millimeters
     )
-
-    // Session reference through activity
-    var arCoreSessionHelper: com.example.mnn_llm_test.arcore.common.helpers.ARCoreSessionLifecycleHelper? = null
-    val session get() = arCoreSessionHelper?.session
-    val displayRotationHelper = DisplayRotationHelper(activity)
-    val trackingStateHelper = TrackingStateHelper(activity)
 
     override fun onResume(owner: LifecycleOwner) {
         displayRotationHelper.onResume()
@@ -272,16 +273,9 @@ class ARCameraRenderer(
                             if (isCameraActiveForRendering) {
                                 currentDetectionResults = detectionsWithDepth
                                 onDetectionUpdate?.invoke(detectionsWithDepth)
-                            
-                                // Enhanced logging for debugging
-                                Log.d(TAG, "🎯 Detected ${detections.size} objects with depth info:")
-                                detectionsWithDepth.forEachIndexed { index, detectionWithDepth ->
-                                    val detection = detectionWithDepth.detection
-                                    val distance = detectionWithDepth.distance
-                                    Log.d(TAG, "  [$index] Object: ${detection.className} (${String.format("%.2f", detection.confidence * 100)}%) " +
-                                              "at distance: ${distance}mm (${String.format("%.1f", distance / 1000.0)}m) " +
-                                              "bbox: [${detection.x.toInt()}, ${detection.y.toInt()}, ${detection.width.toInt()}, ${detection.height.toInt()}]")
-                                }
+                                
+                                // Check for scene changes and announce
+                                checkSceneChange(detectionsWithDepth)
                             }
                         }
                     } else {
@@ -289,6 +283,9 @@ class ARCameraRenderer(
                             if (isCameraActiveForRendering) {
                                 currentDetectionResults = null
                                 onDetectionUpdate?.invoke(emptyList())
+                                
+                                // Check for scene changes (no detections)
+                                checkSceneChange(emptyList())
                                 
                                 // Log when no objects detected (less frequently to avoid spam)
                                 if (frameCounter % 60 == 0) {
@@ -456,6 +453,9 @@ class ARCameraRenderer(
             currentDepthData = null
             currentFrame = null
             
+            // Stop any ongoing TTS announcements
+            ttsHelper.stop()
+            
             // 🎯 No complex scope cancellation needed - just stop processing
             Log.d(TAG, "🛑 Detection processing stopped")
             
@@ -484,5 +484,84 @@ class ARCameraRenderer(
             
             Log.d(TAG, "🚀 Camera renderer activated - resuming frame processing")
         }
+    }
+    
+    /**
+     * Check for scene changes and announce detection count
+     */
+    private fun checkSceneChange(currentDetections: List<DetectionWithDepth>) {
+        val currentCount = currentDetections.size
+        
+        if (currentCount != lastDetectionCount && !ttsHelper.isBusy() && isCameraActiveForRendering) {
+            val announcement = if (currentCount == 0) {
+                "No detections"
+            } else if (currentCount == 1) {
+                "1 detection"
+            } else {
+                "$currentCount detections"
+            }
+            
+            Log.d(TAG, "Scene change: $lastDetectionCount -> $currentCount objects")
+            
+            // Update count immediately to prevent duplicate announcements
+            lastDetectionCount = currentCount
+            
+            // Speak with callback to re-enable checking after speech finishes
+            ttsHelper.speak(announcement) {
+                // After TTS finishes, the next detection cycle will check for changes again
+                Log.d(TAG, "TTS finished, ready for next scene change detection")
+            }
+        }
+    }
+    
+    /**
+     * Announce objects on left or right side of screen
+     */
+    fun announceObjectsOnSide(tapX: Float, screenWidth: Float, detections: List<DetectionWithDepth>) {
+        val isLeftSide = tapX < screenWidth / 2
+        val side = if (isLeftSide) "left" else "right"
+        
+        // Filter detections to the tapped side
+        val sideDetections = detections.filter { detection ->
+            val objCenterX = detection.detection.x + detection.detection.width / 2
+            if (isLeftSide) objCenterX < 0.5f else objCenterX >= 0.5f
+        }
+        
+        if (sideDetections.isEmpty()) {
+            ttsHelper.speak("Nothing detected on your $side")
+            return
+        }
+        
+        // Sort by distance (closest first)
+        val sortedDetections = sideDetections.sortedBy { it.distance }
+        
+        val announcement = buildString {
+            append("To your $side you have, ")
+            
+            sortedDetections.forEachIndexed { index, detection ->
+                if (index > 0) append(", ")
+                
+                val distanceText = if (detection.distance > 0) {
+                    if (detection.distance < 1000) {
+                        "${detection.distance} millimeters"
+                    } else {
+                        val meters = detection.distance / 1000f
+                        "${String.format("%.1f", meters)} meters"
+                    }
+                } else {
+                    "unknown distance"
+                }
+                
+                append("${detection.detection.className} at $distanceText")
+            }
+        }
+        
+        Log.d(TAG, "Announcing: $announcement")
+        ttsHelper.speak(announcement)
+    }
+    
+    override fun onDestroy(owner: LifecycleOwner) {
+        super.onDestroy(owner)
+        ttsHelper.shutdown()
     }
 } 

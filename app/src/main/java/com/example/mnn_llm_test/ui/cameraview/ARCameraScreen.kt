@@ -238,17 +238,20 @@ fun ARCameraView(
                     )
                 }
                 
-                // Initialize ARCore components with overlay callback
+                // Initialize ARCore components without overlay callback
                 val arCoreSessionHelper = ARCoreSessionLifecycleHelper(context as androidx.activity.ComponentActivity)
+                
+                // Create renderer with bounding box overlay callback
                 val renderer = ARCameraRenderer(
                     context as androidx.activity.ComponentActivity, 
-                    onCapture
-                ) { detections ->
-                    // Update overlay on main thread
-                    boundingBoxOverlay.post {
-                        boundingBoxOverlay.updateDetections(detections)
+                    onCapture,
+                    onDetectionUpdate = { detections ->
+                        // Update overlay on main thread
+                        boundingBoxOverlay.post {
+                            boundingBoxOverlay.updateDetections(detections)
+                        }
                     }
-                }
+                )
                 
                 // Connect renderer to session helper
                 renderer.arCoreSessionHelper = arCoreSessionHelper
@@ -290,10 +293,32 @@ fun ARCameraView(
                 // Give renderer access to GLSurfaceView for render mode control
                 renderer.setGLSurfaceView(glSurfaceView)
                 
-                // Setup touch listener for capture on the overlay (so it doesn't interfere with GLSurfaceView)
+                // Setup touch listener for single/double tap detection on overlay (so it doesn't interfere with GLSurfaceView)
+                var lastTapTime = 0L
+                val doubleTapTimeThreshold = 300L
+                
                 boundingBoxOverlay.setOnTouchListener { _, event ->
                     if (event.action == android.view.MotionEvent.ACTION_DOWN) {
-                        renderer.requestCapture()
+                        val currentTime = System.currentTimeMillis()
+                        
+                        if (currentTime - lastTapTime <= doubleTapTimeThreshold) {
+                            // Double tap detected - trigger capture for chat
+                            renderer.requestCapture()
+                        } else {
+                            // Potential single tap - wait to see if double tap follows
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                val timeSinceTap = System.currentTimeMillis() - currentTime
+                                if (timeSinceTap >= doubleTapTimeThreshold) {
+                                    // Single tap confirmed - announce objects on left/right
+                                    val screenWidth = width.toFloat()
+                                    renderer.currentDetectionResults?.let { detections ->
+                                        renderer.announceObjectsOnSide(event.x, screenWidth, detections)
+                                    }
+                                }
+                            }, doubleTapTimeThreshold)
+                        }
+                        
+                        lastTapTime = currentTime
                         true
                     } else {
                         false
@@ -312,7 +337,7 @@ fun ARCameraView(
         )
         
         // ✨ Overlay text positioned directly on top of camera preview
-        var overlayText by remember { mutableStateOf("Tap to Chat") }
+        var overlayText by remember { mutableStateOf("Single tap: Hear objects | Double tap: Start chat") }
         var overlayVisible by remember { mutableStateOf(true) }
         var overlayAlpha by remember { mutableStateOf(0f) }
         
@@ -327,8 +352,8 @@ fun ARCameraView(
                 overlayAlpha = value
             }
             
-            // Stay visible for 3 seconds
-            kotlinx.coroutines.delay(3000)
+            // Stay visible for 5 seconds (longer since text is more detailed)
+            kotlinx.coroutines.delay(5000)
             
             // Fade out
             androidx.compose.animation.core.animate(
