@@ -18,6 +18,7 @@ import androidx.media3.common.util.UnstableApi
 import com.example.mnn_llm_test.navigation.AppNavigator
 import com.example.mnn_llm_test.ui.theme.MnnllmtestTheme
 import com.example.mnn_llm_test.utils.HuggingFaceDownloader
+import com.example.mnn_llm_test.utils.TtsHelper
 import com.example.mnn_llm_test.arcore.ml.LiteRTYoloDetector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -38,6 +39,17 @@ class MainActivity : ComponentActivity() {
         internal fun setGlobalYoloDetector(detector: LiteRTYoloDetector) {
             _globalYoloDetector = detector
         }
+        
+        // 🎤 Global TTS helper - initialized once, used throughout app lifecycle
+        @Volatile
+        private var _globalTtsHelper: TtsHelper? = null
+        
+        val globalTtsHelper: TtsHelper?
+            get() = _globalTtsHelper
+            
+        internal fun setGlobalTtsHelper(ttsHelper: TtsHelper) {
+            _globalTtsHelper = ttsHelper
+        }
     }
 
     @OptIn(UnstableApi::class)
@@ -55,6 +67,7 @@ class MainActivity : ComponentActivity() {
             var isModelLoading by remember { mutableStateOf(true) }
             var chatSession by remember { mutableStateOf<MnnLlmJni.ChatSession?>(null) }
             var isYoloReady by remember { mutableStateOf(false) }
+            var isTtsReady by remember { mutableStateOf(false) }
 
             MnnllmtestTheme {
                 AppNavigator(chatSessionState = chatSession, isModelLoading = isModelLoading)
@@ -62,7 +75,7 @@ class MainActivity : ComponentActivity() {
 
             LaunchedEffect(Unit) {
                 withContext(Dispatchers.IO) {
-                    // 🚀 Initialize YOLO detector first (parallel with VLM setup)
+                    // 🚀 Initialize YOLO detector and TTS (parallel with VLM setup)
                     val yoloInitJob = launch {
                         try {
                             Log.d("YoloLoading", "🎯 Initializing global YOLO detector...")
@@ -78,6 +91,21 @@ class MainActivity : ComponentActivity() {
                             }
                         } catch (e: Exception) {
                             Log.e("YoloLoading", "❌ Error initializing global YOLO detector", e)
+                        }
+                    }
+                    
+                    val ttsInitJob = launch {
+                        try {
+                            Log.d("TtsLoading", "🎤 Initializing global TTS helper...")
+                            val ttsHelper = TtsHelper(this@MainActivity)
+                            
+                            // TTS initialization is async, but we can set it immediately
+                            // The actual TTS engine will initialize in the background
+                            setGlobalTtsHelper(ttsHelper)
+                            isTtsReady = true
+                            Log.d("TtsLoading", "✅ Global TTS helper ready!")
+                        } catch (e: Exception) {
+                            Log.e("TtsLoading", "❌ Error initializing global TTS helper", e)
                         }
                     }
                     
@@ -129,15 +157,16 @@ class MainActivity : ComponentActivity() {
                             isDiffusion = false
                         )
 
-                        // Wait for YOLO to be ready before completing initialization
+                        // Wait for both YOLO and TTS to be ready before completing initialization
                         yoloInitJob.join()
+                        ttsInitJob.join()
                         
                         withContext(Dispatchers.Main) {
                             chatSession = session
                             isModelLoading = false
                         }
                         Log.d("ModelLoading", "✅ Model initialized successfully.")
-                        Log.d("AppInit", "🎉 App fully initialized - VLM: ✅ YOLO: ${if (isYoloReady) "✅" else "❌"}")
+                        Log.d("AppInit", "🎉 App fully initialized - VLM: ✅ YOLO: ${if (isYoloReady) "✅" else "❌"} TTS: ${if (isTtsReady) "✅" else "❌"}")
                     } catch (e: Exception) {
                         Log.e("ModelLoading", "❌ Error initializing the model", e)
                         withContext(Dispatchers.Main) {
@@ -147,6 +176,14 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        // Cleanup global resources
+        globalTtsHelper?.shutdown()
+        globalYoloDetector?.close()
+        Log.d("MainActivity", "🧹 Global resources cleaned up")
     }
 }
 

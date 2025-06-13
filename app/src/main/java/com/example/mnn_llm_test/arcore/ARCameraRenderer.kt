@@ -73,7 +73,7 @@ class ARCameraRenderer(
     
     // UI and accessibility
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val ttsHelper = TtsHelper(activity)
+    // TTS helper accessed globally - no local instance needed
     
     // Scene change detection
     private var lastDetectionCount = 0
@@ -454,7 +454,7 @@ class ARCameraRenderer(
             currentFrame = null
             
             // Stop any ongoing TTS announcements
-            ttsHelper.stop()
+            MainActivity.globalTtsHelper?.stop()
             
             // 🎯 No complex scope cancellation needed - just stop processing
             Log.d(TAG, "🛑 Detection processing stopped")
@@ -508,7 +508,7 @@ class ARCameraRenderer(
             
             // 🟢 LOW priority - these background announcements have completion pending
             // (won't interrupt each other, will skip if another LOW priority is active)
-            ttsHelper.speak(announcement, TtsHelper.Priority.LOW) {
+            MainActivity.globalTtsHelper?.speak(announcement, TtsHelper.Priority.LOW) {
                 Log.d(TAG, "Background TTS finished, ready for next scene change detection")
             }
         }
@@ -525,7 +525,7 @@ class ARCameraRenderer(
         Log.d(TAG, "🎤 Single tap detected - requesting HIGH priority TTS announcement")
         
         if (detections.isEmpty()) {
-            ttsHelper.speak("No objects detected", TtsHelper.Priority.HIGH)
+            MainActivity.globalTtsHelper?.speak("No objects detected", TtsHelper.Priority.HIGH)
             return
         }
         
@@ -599,11 +599,11 @@ class ARCameraRenderer(
         }
         
         Log.d(TAG, "🎤 HIGH priority announcement from tap: $announcement")
-        ttsHelper.speak(announcement, TtsHelper.Priority.HIGH)
+        MainActivity.globalTtsHelper?.speak(announcement, TtsHelper.Priority.HIGH)
     }
     
     override fun onDestroy(owner: LifecycleOwner) {
         super.onDestroy(owner)
-        ttsHelper.shutdown()
+        // TTS is now global - don't shutdown here, will be handled by MainActivity
     }
 } 
