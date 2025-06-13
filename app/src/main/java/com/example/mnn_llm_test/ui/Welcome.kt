@@ -67,7 +67,7 @@ fun WelcomeScreen(context: Context, modifier: Modifier) {
             
             // Loading message
             Text(
-                text = "Initializing AI Models & TTS...",
+                text = "Initializing AI Models, TTS & STT...",
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onBackground,
                 textAlign = TextAlign.Center,

@@ -33,6 +33,7 @@ import com.example.mnn_llm_test.ui.chatview.ChatViewModel
 import com.example.mnn_llm_test.ui.chatview.ChatViewModelFactory
 import com.example.mnntest.ChatApplication
 import com.example.mnn_llm_test.VoskHelper
+import com.example.mnn_llm_test.MainActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
@@ -73,35 +74,33 @@ fun ChatScreen(
     var imageAlreadySentInConversation by remember { mutableStateOf(false) }
     var initialImageProcessed by remember { mutableStateOf(false) }
 
-    // Vosk STT State
-    var isVoskInitialized by remember { mutableStateOf(false) }
+    // Global STT State
     var isRecording by remember { mutableStateOf(false) }
-    val voskHelper = remember(context) {
-        VoskHelper(
-            context = context,
-            onFinalTranscription = {
-                inputText = TextFieldValue(inputText.text + " " + it)
+    val globalSttHelper = MainActivity.globalSttHelper
+    val isVoskInitialized = globalSttHelper?.isModelReady() == true
+
+    // Setup STT callbacks for this screen
+    LaunchedEffect(globalSttHelper) {
+        globalSttHelper?.setCallbacks(
+            onFinalTranscription = { transcription ->
+                inputText = TextFieldValue(inputText.text + " " + transcription)
                 isRecording = false
             },
-            onError = {
-                Log.e("VoskHelper", "Vosk Error: $it")
+            onError = { error ->
+                Log.e("ChatScreen", "STT Error: $error")
                 isRecording = false
             }
         )
     }
 
-    LaunchedEffect(Unit) {
-        Log.d("ChatScreen", "Attempting to initialize Vosk model...")
-        voskHelper.initModel()
-        isVoskInitialized = true
-        Log.d("ChatScreen", "Vosk model initialization sequence started.")
-    }
-
     DisposableEffect(Unit) {
         onDispose {
             if (isRecording) {
-                voskHelper.stopRecording()
+                globalSttHelper?.stopRecording()
+                isRecording = false
             }
+            // Clear callbacks when leaving screen
+            globalSttHelper?.setCallbacks(null, null)
         }
     }
 
@@ -250,18 +249,18 @@ fun ChatScreen(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 IconButton(onClick = {
-                    if (isVoskInitialized) {
+                    if (isVoskInitialized && globalSttHelper != null) {
                         if (isRecording) {
-                            voskHelper.stopRecording()
+                            globalSttHelper.stopRecording()
                             isRecording = false
-                            Log.d("ChatScreen", "Stopped Vosk recording.")
+                            Log.d("ChatScreen", "Stopped STT recording.")
                         } else {
-                            voskHelper.startRecording()
+                            globalSttHelper.startRecording()
                             isRecording = true
-                            Log.d("ChatScreen", "Started Vosk recording.")
+                            Log.d("ChatScreen", "Started STT recording.")
                         }
                     }
-                }, enabled = !isGenerating && isVoskInitialized) {
+                }, enabled = !isGenerating && isVoskInitialized && globalSttHelper != null) {
                     Icon(
                         imageVector = if (isRecording) Icons.Filled.Stop else Icons.Default.Mic,
                         contentDescription = if (isRecording) "Stop Recording" else "Record Audio"

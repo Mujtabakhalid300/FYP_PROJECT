@@ -12,12 +12,24 @@ import java.io.IOException
 
 class VoskHelper(
     private val context: Context,
-    private val onFinalTranscription: (String) -> Unit, // Callback to handle recognition results
-    private val onError: (String) -> Unit   // Callback to handle errors
+    private var onFinalTranscription: ((String) -> Unit)? = null, // Callback to handle recognition results
+    private var onError: ((String) -> Unit)? = null   // Callback to handle errors
 ) : RecognitionListener {
 
     private var model: Model? = null
     private var speechService: SpeechService? = null
+    
+    // Allow updating callbacks for global instance usage
+    fun setCallbacks(
+        onFinalTranscription: ((String) -> Unit)? = null,
+        onError: ((String) -> Unit)? = null
+    ) {
+        this.onFinalTranscription = onFinalTranscription
+        this.onError = onError
+    }
+    
+    // Check if the model is ready for use
+    fun isModelReady(): Boolean = model != null
 
     fun initModel() {
         StorageService.unpack(context, "vosk-model-small-en-in-0.4", "model",
@@ -25,14 +37,14 @@ class VoskHelper(
                 this.model = model
             },
             { exception ->
-                onError("Failed to unpack the model: ${exception.message}")
+                onError?.invoke("Failed to unpack the model: ${exception.message}")
             }
         )
     }
 
     fun startRecording() {
         if (model == null) {
-            onError("Model is not ready")
+            onError?.invoke("Model is not ready")
             return
         }
 
@@ -41,7 +53,7 @@ class VoskHelper(
             speechService = SpeechService(rec, 16000.0f)
             speechService?.startListening(this)
         } catch (e: IOException) {
-            onError("Error starting recording: ${e.message}")
+            onError?.invoke("Error starting recording: ${e.message}")
         }
     }
 
@@ -101,11 +113,11 @@ class VoskHelper(
 
                 // Pass the final transcription to the callback
                 if (finalTranscription.isNotEmpty()) {
-                    onFinalTranscription(finalTranscription)
+                    onFinalTranscription?.invoke(finalTranscription)
                 }
             } catch (e: Exception) {
                 Log.e("VoskHelper", "Failed to parse final result: $result", e)
-                onError("Failed to parse final result")
+                onError?.invoke("Failed to parse final result")
             }
         }
     }
@@ -113,7 +125,7 @@ class VoskHelper(
     override fun onError(exception: Exception?) {
         exception?.let { e ->
             Log.e("VoskHelper", "Recognition error: ${e.message}")
-            onError("Error: ${e.message}")
+            onError?.invoke("Error: ${e.message}")
             stopRecording() // Stop the recognition process
         }
     }

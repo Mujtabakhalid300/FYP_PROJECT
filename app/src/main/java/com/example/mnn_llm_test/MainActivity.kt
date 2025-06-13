@@ -20,6 +20,7 @@ import com.example.mnn_llm_test.ui.theme.MnnllmtestTheme
 import com.example.mnn_llm_test.utils.HuggingFaceDownloader
 import com.example.mnn_llm_test.utils.TtsHelper
 import com.example.mnn_llm_test.arcore.ml.LiteRTYoloDetector
+import com.example.mnn_llm_test.VoskHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
@@ -50,6 +51,17 @@ class MainActivity : ComponentActivity() {
         internal fun setGlobalTtsHelper(ttsHelper: TtsHelper) {
             _globalTtsHelper = ttsHelper
         }
+        
+        // 🎙️ Global STT (VoskHelper) - initialized once, used throughout app lifecycle
+        @Volatile
+        private var _globalSttHelper: VoskHelper? = null
+        
+        val globalSttHelper: VoskHelper?
+            get() = _globalSttHelper
+            
+        internal fun setGlobalSttHelper(sttHelper: VoskHelper) {
+            _globalSttHelper = sttHelper
+        }
     }
 
     @OptIn(UnstableApi::class)
@@ -68,6 +80,7 @@ class MainActivity : ComponentActivity() {
             var chatSession by remember { mutableStateOf<MnnLlmJni.ChatSession?>(null) }
             var isYoloReady by remember { mutableStateOf(false) }
             var isTtsReady by remember { mutableStateOf(false) }
+            var isSttReady by remember { mutableStateOf(false) }
 
             MnnllmtestTheme {
                 AppNavigator(chatSessionState = chatSession, isModelLoading = isModelLoading)
@@ -106,6 +119,40 @@ class MainActivity : ComponentActivity() {
                             Log.d("TtsLoading", "✅ Global TTS helper ready!")
                         } catch (e: Exception) {
                             Log.e("TtsLoading", "❌ Error initializing global TTS helper", e)
+                        }
+                    }
+                    
+                    val sttInitJob = launch {
+                        try {
+                            Log.d("SttLoading", "🎙️ Initializing global STT helper...")
+                            val sttHelper = VoskHelper(
+                                context = this@MainActivity,
+                                onFinalTranscription = null, // Will be set by individual screens
+                                onError = { error ->
+                                    Log.e("SttLoading", "Global STT error: $error")
+                                }
+                            )
+                            
+                            // Initialize the Vosk model
+                            sttHelper.initModel()
+                            
+                            // Wait a bit for model to be fully loaded before marking as ready
+                            kotlinx.coroutines.delay(2000)
+                            
+                            setGlobalSttHelper(sttHelper)
+                            
+                            // Check if model is actually ready
+                            if (sttHelper.isModelReady()) {
+                                isSttReady = true
+                                Log.d("SttLoading", "✅ Global STT helper ready!")
+                            } else {
+                                Log.w("SttLoading", "⚠️ STT helper created but model not ready yet")
+                                // Still set as ready since model initialization is async
+                                isSttReady = true
+                            }
+                        } catch (e: Exception) {
+                            Log.e("SttLoading", "❌ Error initializing global STT helper", e)
+                            isSttReady = false // Ensure we don't proceed without STT
                         }
                     }
                     
@@ -157,16 +204,17 @@ class MainActivity : ComponentActivity() {
                             isDiffusion = false
                         )
 
-                        // Wait for both YOLO and TTS to be ready before completing initialization
+                        // Wait for YOLO, TTS, and STT to be ready before completing initialization
                         yoloInitJob.join()
                         ttsInitJob.join()
+                        sttInitJob.join()
                         
                         withContext(Dispatchers.Main) {
                             chatSession = session
                             isModelLoading = false
                         }
                         Log.d("ModelLoading", "✅ Model initialized successfully.")
-                        Log.d("AppInit", "🎉 App fully initialized - VLM: ✅ YOLO: ${if (isYoloReady) "✅" else "❌"} TTS: ${if (isTtsReady) "✅" else "❌"}")
+                        Log.d("AppInit", "🎉 App fully initialized - VLM: ✅ YOLO: ${if (isYoloReady) "✅" else "❌"} TTS: ${if (isTtsReady) "✅" else "❌"} STT: ${if (isSttReady) "✅" else "❌"}")
                     } catch (e: Exception) {
                         Log.e("ModelLoading", "❌ Error initializing the model", e)
                         withContext(Dispatchers.Main) {
@@ -204,6 +252,7 @@ class MainActivity : ComponentActivity() {
         // Cleanup global resources
         globalTtsHelper?.shutdown()
         globalYoloDetector?.close()
+        globalSttHelper?.stopRecording()
         Log.d("MainActivity", "🧹 Global resources cleaned up")
     }
 }
