@@ -281,7 +281,7 @@ class ARCameraRenderer(
                     } else {
                         withContext(Dispatchers.Main) {
                             if (isCameraActiveForRendering) {
-                                currentDetectionResults = null
+                                currentDetectionResults = emptyList()
                                 onDetectionUpdate?.invoke(emptyList())
                                 
                                 // Check for scene changes (no detections)
@@ -525,7 +525,7 @@ class ARCameraRenderer(
         Log.d(TAG, "🎤 Single tap detected - requesting HIGH priority TTS announcement")
         
         if (detections.isEmpty()) {
-            MainActivity.globalTtsHelper?.speak("No objects detected", TtsHelper.Priority.HIGH)
+            MainActivity.globalTtsHelper?.speak("No objects of interest present in the scenery. Try moving your camera around to explore different areas.", TtsHelper.Priority.HIGH)
             return
         }
         

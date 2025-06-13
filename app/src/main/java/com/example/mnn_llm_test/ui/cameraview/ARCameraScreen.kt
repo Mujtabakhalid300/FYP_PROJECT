@@ -314,9 +314,8 @@ fun ARCameraView(
                                 if (timeSinceTap >= doubleTapTimeThreshold) {
                                     // Single tap confirmed - announce objects on left/right
                                     val screenWidth = width.toFloat()
-                                    renderer.currentDetectionResults?.let { detections ->
-                                        renderer.announceObjectsOnSide(event.x, screenWidth, detections)
-                                    }
+                                    val detections = renderer.currentDetectionResults ?: emptyList()
+                                    renderer.announceObjectsOnSide(event.x, screenWidth, detections)
                                 }
                             }, doubleTapTimeThreshold)
                         }
