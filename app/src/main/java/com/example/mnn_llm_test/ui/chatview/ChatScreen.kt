@@ -79,18 +79,26 @@ fun ChatScreen(
     val globalSttHelper = MainActivity.globalSttHelper
     val isVoskInitialized = globalSttHelper?.isModelReady() == true
 
+    // Define callbacks for this screen
+    val chatSttFinalCallback: (String) -> Unit = { transcription ->
+        Log.d("ChatScreen", "📝 STT detected speech: '$transcription'")
+        inputText = TextFieldValue(inputText.text + " " + transcription)
+        isRecording = false
+        Log.d("ChatScreen", "💬 Updated chat input to: '${inputText.text}'")
+    }
+    
+    val chatSttErrorCallback: (String) -> Unit = { error ->
+        Log.e("ChatScreen", "❌ STT Error: $error")
+        isRecording = false
+    }
+
     // Setup STT callbacks for this screen
     LaunchedEffect(globalSttHelper) {
         globalSttHelper?.setCallbacks(
-            onFinalTranscription = { transcription ->
-                inputText = TextFieldValue(inputText.text + " " + transcription)
-                isRecording = false
-            },
-            onError = { error ->
-                Log.e("ChatScreen", "STT Error: $error")
-                isRecording = false
-            }
+            onFinalTranscription = chatSttFinalCallback,
+            onError = chatSttErrorCallback
         )
+        Log.d("ChatScreen", "🎙️ ChatScreen STT callbacks registered")
     }
 
     DisposableEffect(Unit) {
@@ -98,9 +106,11 @@ fun ChatScreen(
             if (isRecording) {
                 globalSttHelper?.stopRecording()
                 isRecording = false
+                Log.d("ChatScreen", "🛑 Stopped STT recording on ChatScreen dispose")
             }
-            // Clear callbacks when leaving screen
-            globalSttHelper?.setCallbacks(null, null)
+            // Safely clear callbacks only if they're still ours
+            globalSttHelper?.clearCallbacksIfMatching(chatSttFinalCallback, chatSttErrorCallback)
+            Log.d("ChatScreen", "🧹 ChatScreen disposed - attempted safe callback cleanup")
         }
     }
 

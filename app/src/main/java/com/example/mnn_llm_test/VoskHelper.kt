@@ -26,6 +26,21 @@ class VoskHelper(
     ) {
         this.onFinalTranscription = onFinalTranscription
         this.onError = onError
+        Log.d("VoskHelper", "📞 STT callbacks updated - finalTranscription: ${onFinalTranscription != null}, error: ${onError != null}")
+    }
+    
+    // Safe method to clear callbacks only if they match (to prevent race conditions)
+    fun clearCallbacksIfMatching(
+        expectedFinalTranscription: ((String) -> Unit)?,
+        expectedError: ((String) -> Unit)?
+    ) {
+        if (this.onFinalTranscription == expectedFinalTranscription && this.onError == expectedError) {
+            this.onFinalTranscription = null
+            this.onError = null
+            Log.d("VoskHelper", "🧹 STT callbacks safely cleared - callbacks matched expected")
+        } else {
+            Log.d("VoskHelper", "⚠️ STT callback clear skipped - callbacks don't match (probably already replaced by another screen)")
+        }
     }
     
     // Check if the model is ready for use
