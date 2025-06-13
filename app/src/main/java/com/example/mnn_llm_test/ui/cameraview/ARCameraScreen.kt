@@ -140,11 +140,15 @@ private fun ARCameraContent(
                                     Log.d("ARCameraScreen", "Photo captured: $filePath")
                                     
                                     // Create chat thread and associate image
+                                    val currentTime = System.currentTimeMillis()
+                                    val dateFormat = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
+                                    val formattedDate = dateFormat.format(Date(currentTime))
+                                    
                                     val newChatThread = ChatThread(
-                                        title = "AR Chat Session - ${System.currentTimeMillis()}",
+                                        title = formattedDate,
                                         systemPrompt = null,
-                                        createdAt = Timestamp(System.currentTimeMillis()),
-                                        updatedAt = Timestamp(System.currentTimeMillis())
+                                        createdAt = Timestamp(currentTime),
+                                        updatedAt = Timestamp(currentTime)
                                     )
                                     val threadId = chatRepository.insertChatThread(newChatThread).toInt()
 

@@ -100,14 +100,14 @@ private fun ChatHistoryItem(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    text = thread.title ?: "Unnamed Chat - ${thread.id}",
+                    text = thread.title ?: formatDate(thread.updatedAt),
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = formatDate(thread.createdAt),
+                    text = formatDate(thread.updatedAt),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
