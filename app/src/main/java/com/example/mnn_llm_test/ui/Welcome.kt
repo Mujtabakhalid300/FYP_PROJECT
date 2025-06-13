@@ -8,80 +8,85 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 @Composable
 fun WelcomeScreen(context: Context, modifier: Modifier) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp).semantics(mergeDescendants = true) { 
-            contentDescription = "Welcome to Ibelong - Loading AI models"  
-        },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
     ) {
-        Text(
-            text = "Welcome", 
-            fontSize = 70.sp, 
-            color = Color.Black,
-            style = MaterialTheme.typography.headlineLarge
-        )
-        Text(
-            text = "to", 
-            fontSize = 70.sp, 
-            color = Color.Black,
-            style = MaterialTheme.typography.headlineLarge
-        )
-        Text(
-            text = "Ibelong", 
-            fontSize = 70.sp, 
-            color = Color(0xFF0047FF), 
-            style = MaterialTheme.typography.headlineLarge
-        )
-        
-        Spacer(modifier = Modifier.height(48.dp))
-        
-        // Loading indicator
-        CircularProgressIndicator(
-            modifier = Modifier.size(48.dp),
-            color = Color(0xFF0047FF),
-            strokeWidth = 4.dp
-        )
-        
-        Spacer(modifier = Modifier.height(24.dp))
-        
-        // Loading message
-        Text(
-            text = "Initializing AI Models & TTS...",
-            fontSize = 18.sp,
-            color = Color.Gray,
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center
-        )
-        
-        Spacer(modifier = Modifier.height(12.dp))
-        
-        // Offline capability message
-        Text(
-            text = "Works offline once models are loaded",
-            fontSize = 14.sp,
-            color = Color.Gray,
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.semantics { 
-                contentDescription = "App works offline once AI models are initialized" 
-            }
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .navigationBarsPadding()
+                .padding(32.dp)
+                .semantics(mergeDescendants = true) { 
+                    contentDescription = "Welcome to Ibelong - Loading AI models"  
+                },
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            // App welcome text
+            Text(
+                text = "Welcome to", 
+                style = MaterialTheme.typography.displayLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                fontWeight = FontWeight.Light
+            )
+            
+            Text(
+                text = "Ibelong", 
+                style = MaterialTheme.typography.displayLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold
+            )
+            
+            Spacer(modifier = Modifier.height(64.dp))
+            
+            // Loading indicator
+            CircularProgressIndicator(
+                modifier = Modifier.size(56.dp),
+                color = MaterialTheme.colorScheme.primary,
+                strokeWidth = 4.dp
+            )
+            
+            Spacer(modifier = Modifier.height(32.dp))
+            
+            // Loading message
+            Text(
+                text = "Initializing AI Models & TTS...",
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.Medium
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Offline capability message
+            Text(
+                text = "Works offline once models are loaded",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.semantics { 
+                    contentDescription = "App works offline once AI models are initialized" 
+                }
+            )
+        }
     }
 }
 
