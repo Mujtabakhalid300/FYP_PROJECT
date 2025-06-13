@@ -91,15 +91,21 @@ class MainActivity : ComponentActivity() {
                         "ignored/taobao-mnn/$localFolderName"
                     )
 
-                    val downloader = HuggingFaceDownloader(applicationContext)
-                    downloader.downloadModelFiles(
-                        repo = repoName,
-                        commitSha = commitSha,
-                        outputDirName = "ignored",
-                        onProgress = { downloaded, total, currentFile ->
-                            Log.d("DownloadProgress", "Downloading $currentFile ($downloaded/$total)")
-                        }
-                    )
+                    // 🔧 Smart model loading - offline-first approach
+                    try {
+                        val downloader = HuggingFaceDownloader(applicationContext)
+                        downloader.downloadModelFiles(
+                            repo = repoName,
+                            commitSha = commitSha,
+                            outputDirName = "ignored",
+                            onProgress = { downloaded, total, currentFile ->
+                                Log.d("DownloadProgress", "Downloading $currentFile ($downloaded/$total)")
+                            }
+                        )
+                    } catch (e: Exception) {
+                        Log.e("ModelLoading", "❌ Download error: ${e.message}")
+                        // Continue to check if model files exist anyway (might be a network issue but files are there)
+                    }
 
                     val modelFile = File(downloadsDir, "llm.mnn")
                     if (modelFile.exists()) {

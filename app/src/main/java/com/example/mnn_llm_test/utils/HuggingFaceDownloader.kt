@@ -27,19 +27,41 @@ class HuggingFaceDownloader(private val context: Context) {
             "$outputDirName/$repo-$commitSha"
         )
 
-        // Step 1: Get list of files from Hugging Face API
+        // 🔧 OFFLINE-FIRST: Check for essential model files before making any network calls
+        val essentialFiles = listOf("llm.mnn", "config.json")
+        val allEssentialFilesExist = essentialFiles.all { fileName ->
+            val file = File(downloadsDir, fileName)
+            val exists = file.exists()
+            Log.d("HFDownloader", "Checking essential file '$fileName': ${if (exists) "✅ EXISTS" else "❌ MISSING"}")
+            exists
+        }
+
+        if (allEssentialFilesExist) {
+            Log.d("HFDownloader", "🎉 All essential model files found locally. Working OFFLINE! No internet required.")
+            return@withContext
+        }
+
+        Log.d("HFDownloader", "📥 Some essential files missing. Need to download from HuggingFace...")
+
+        // Step 1: Get list of files from Hugging Face API (only if files are missing)
         val apiUrl = "https://huggingface.co/api/models/$repo/tree/$commitSha"
         val request = Request.Builder().url(apiUrl).build()
-        val response = client.newCall(request).execute()
+        
+        val response = try {
+            client.newCall(request).execute()
+        } catch (e: Exception) {
+            Log.e("HFDownloader", "❌ Network error - no internet connection: ${e.message}")
+            throw Exception("No internet connection available and model files are missing. Please connect to internet for initial download.")
+        }
 
         if (!response.isSuccessful) {
             Log.e("HFDownloader", "Failed to get file list: ${response.code}")
-            return@withContext
+            throw Exception("Failed to fetch model file list from HuggingFace (HTTP ${response.code})")
         }
 
         val jsonString = response.body?.string() ?: run {
             Log.e("HFDownloader", "Empty response body")
-            return@withContext
+            throw Exception("Empty response from HuggingFace API")
         }
 
         val jsonArray = JSONArray(jsonString)
@@ -49,13 +71,13 @@ class HuggingFaceDownloader(private val context: Context) {
             fileList.add(item.getString("path"))
         }
 
-        // Step 2: Check if all files exist in downloadsDir
+        // Step 2: Check if all files exist in downloadsDir (full check now that we have the complete list)
         val allFilesExist = fileList.all { filePath ->
             File(downloadsDir, filePath).exists()
         }
 
         if (allFilesExist) {
-            Log.d("HFDownloader", "✅ Model already exists in Downloads. Skipping download.")
+            Log.d("HFDownloader", "✅ Complete model already exists in Downloads. Skipping download.")
             return@withContext
         }
 
