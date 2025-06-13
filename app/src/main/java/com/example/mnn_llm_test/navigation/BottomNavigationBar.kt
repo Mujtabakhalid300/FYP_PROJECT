@@ -1,6 +1,8 @@
 package com.example.mnn_llm_test.navigation
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Camera
 import androidx.compose.material.icons.filled.Chat
@@ -9,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -43,14 +46,12 @@ fun BottomNavigationBar(
         shadowElevation = 8.dp
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Camera Button
-            NavigationButton(
+            // Camera Section
+            NavigationSection(
                 icon = Icons.Default.Camera,
                 label = "Camera",
                 isSelected = currentRoute == Screen.CameraView.route,
@@ -67,11 +68,12 @@ fun BottomNavigationBar(
                             launchSingleTop = true
                         }
                     }
-                }
+                },
+                modifier = Modifier.weight(1f)
             )
             
-            // Chat Button
-            NavigationButton(
+            // Chat Section
+            NavigationSection(
                 icon = Icons.Default.Chat,
                 label = "Chat",
                 isSelected = currentRoute?.startsWith("chat_view") == true,
@@ -89,11 +91,12 @@ fun BottomNavigationBar(
                             }
                         }
                     }
-                }
+                },
+                modifier = Modifier.weight(1f)
             )
             
-            // History Button
-            NavigationButton(
+            // History Section
+            NavigationSection(
                 icon = Icons.Default.History,
                 label = "History",
                 isSelected = currentRoute == Screen.ChatHistory.route,
@@ -106,14 +109,15 @@ fun BottomNavigationBar(
                             launchSingleTop = true
                         }
                     }
-                }
+                },
+                modifier = Modifier.weight(1f)
             )
         }
     }
 }
 
 @Composable
-private fun NavigationButton(
+private fun NavigationSection(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     isSelected: Boolean,
@@ -121,31 +125,37 @@ private fun NavigationButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val buttonColor = when {
+    val iconColor = when {
         !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
         isSelected -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
     }
     
+    val interactionSource = remember { MutableInteractionSource() }
+    
     Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
+        modifier = modifier
+            .fillMaxHeight()
+            .clickable(
+                interactionSource = interactionSource,
+                indication = androidx.compose.material.ripple.rememberRipple(),
+                enabled = enabled,
+                onClick = onClick
+            ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        IconButton(
-            onClick = onClick,
-            enabled = enabled
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = buttonColor,
-                modifier = Modifier.size(28.dp)
-            )
-        }
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = iconColor,
+            modifier = Modifier.size(28.dp)
+        )
+        Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = buttonColor
+            color = iconColor
         )
     }
 } 
