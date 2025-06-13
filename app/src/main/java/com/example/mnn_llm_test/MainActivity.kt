@@ -178,6 +178,27 @@ class MainActivity : ComponentActivity() {
         }
     }
     
+    override fun onPause() {
+        super.onPause()
+        // 🔇 Stop TTS immediately when app goes to background
+        globalTtsHelper?.forceStop()
+        Log.d("MainActivity", "🔇 TTS stopped - app paused/backgrounded")
+    }
+    
+    override fun onStop() {
+        super.onStop()
+        // 🔇 Also stop TTS when app is no longer visible (additional safety)
+        globalTtsHelper?.forceStop()
+        Log.d("MainActivity", "🔇 TTS stopped - app stopped/hidden")
+    }
+    
+    override fun onBackPressed() {
+        // 🔇 Stop TTS on back button press
+        globalTtsHelper?.forceStop()
+        Log.d("MainActivity", "🔇 TTS stopped - back button pressed")
+        super.onBackPressed()
+    }
+    
     override fun onDestroy() {
         super.onDestroy()
         // Cleanup global resources

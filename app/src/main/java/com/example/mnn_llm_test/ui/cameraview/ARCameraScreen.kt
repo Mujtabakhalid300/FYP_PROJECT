@@ -36,6 +36,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.example.mnn_llm_test.navigation.Screen
 import com.example.mnntest.ChatApplication
+import com.example.mnn_llm_test.MainActivity
 import com.example.mnntest.data.ChatThread
 import com.example.mnntest.data.ChatThreadImage
 import kotlinx.coroutines.Dispatchers
@@ -155,6 +156,8 @@ private fun ARCameraContent(
                                     chatRepository.insertChatThreadImage(newChatImage)
                                     
                                     launch(Dispatchers.Main) {
+                                        // 🔇 Stop TTS before navigation
+                                        MainActivity.globalTtsHelper?.forceStop()
                                         navController.navigate(Screen.ChatView.routeWithArgs(threadId = threadId))
                                     }
                                 } catch (e: Exception) {

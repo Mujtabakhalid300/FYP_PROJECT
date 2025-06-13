@@ -19,6 +19,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import com.example.mnntest.ChatApplication
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
+import com.example.mnn_llm_test.MainActivity
 
 @Composable
 fun BottomNavigationBar(
@@ -56,6 +57,8 @@ fun BottomNavigationBar(
                 enabled = true,
                 onClick = {
                     if (currentRoute != Screen.CameraView.route) {
+                        // 🔇 Stop TTS before navigation
+                        MainActivity.globalTtsHelper?.forceStop()
                         navController.navigate(Screen.CameraView.route) {
                             // Clear back stack to make camera the root
                             popUpTo(navController.graph.startDestinationId) {
@@ -75,6 +78,8 @@ fun BottomNavigationBar(
                 enabled = hasExistingChats,
                 onClick = {
                     if (hasExistingChats && currentRoute?.startsWith("chat_view") != true) {
+                        // 🔇 Stop TTS before navigation
+                        MainActivity.globalTtsHelper?.forceStop()
                         coroutineScope.launch {
                             val latestThread = allChatThreads.firstOrNull()
                             latestThread?.let { thread ->
@@ -95,6 +100,8 @@ fun BottomNavigationBar(
                 enabled = hasExistingChats,
                 onClick = {
                     if (hasExistingChats && currentRoute != Screen.ChatHistory.route) {
+                        // 🔇 Stop TTS before navigation
+                        MainActivity.globalTtsHelper?.forceStop()
                         navController.navigate(Screen.ChatHistory.route) {
                             launchSingleTop = true
                         }

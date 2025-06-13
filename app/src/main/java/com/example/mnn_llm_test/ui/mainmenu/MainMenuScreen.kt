@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.example.mnn_llm_test.navigation.Screen
 import com.example.mnntest.ChatApplication
+import com.example.mnn_llm_test.MainActivity
 import com.example.mnntest.data.ChatThread
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
@@ -56,13 +57,19 @@ fun MainMenuScreen(navController: NavHostController) {
         ) {
             Text("Welcome!", style = MaterialTheme.typography.headlineMedium)
             Spacer(modifier = Modifier.height(32.dp))
-            Button(onClick = { navController.navigate(Screen.CameraView.route) }) {
+            Button(onClick = { 
+                // 🔇 Stop TTS before navigation
+                MainActivity.globalTtsHelper?.forceStop()
+                navController.navigate(Screen.CameraView.route) 
+            }) {
                 Text("Open Camera")
             }
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = {
                     if (hasExistingChats) {
+                        // 🔇 Stop TTS before navigation
+                        MainActivity.globalTtsHelper?.forceStop()
                         coroutineScope.launch {
                             val latestThread = allChatThreads.firstOrNull()
                             if (latestThread != null) {

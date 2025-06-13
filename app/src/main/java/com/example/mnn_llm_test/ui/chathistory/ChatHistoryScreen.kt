@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.example.mnn_llm_test.navigation.Screen
 import com.example.mnntest.ChatApplication
+import com.example.mnn_llm_test.MainActivity
 import com.example.mnntest.data.ChatThread
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -60,6 +61,8 @@ fun ChatHistoryScreen(
                     ChatHistoryItem(
                         thread = thread,
                         onItemClick = {
+                            // 🔇 Stop TTS before navigation
+                            MainActivity.globalTtsHelper?.forceStop()
                             navController.navigate(Screen.ChatView.routeWithArgs(threadId = thread.id)) {
                                 launchSingleTop = true
                             }

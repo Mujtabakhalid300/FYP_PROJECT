@@ -34,6 +34,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.media3.common.util.Log
 import com.example.mnn_llm_test.utils.HuggingFaceDownloader
+import com.example.mnn_llm_test.MainActivity
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.activity.compose.BackHandler
 
 
 @Composable
@@ -53,6 +56,25 @@ fun AppNavigator(
             )
         }
     } else {
+        // 🔇 Stop TTS on any navigation change
+        val navBackStackEntry by navController.currentBackStackEntryAsState()
+        val currentRoute = navBackStackEntry?.destination?.route
+        
+        LaunchedEffect(currentRoute) {
+            // Stop any ongoing TTS whenever route changes
+            MainActivity.globalTtsHelper?.forceStop()
+            Log.d("AppNavigator", "🔇 TTS stopped due to navigation to: $currentRoute")
+        }
+        
+        // 🔇 Handle back navigation (gestures, hardware back button)
+        BackHandler {
+            MainActivity.globalTtsHelper?.forceStop()
+            Log.d("AppNavigator", "🔇 TTS stopped due to back navigation")
+            if (navController.previousBackStackEntry != null) {
+                navController.popBackStack()
+            }
+        }
+        
         Scaffold(
             modifier = Modifier.systemBarsPadding(),
             bottomBar = {
