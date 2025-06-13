@@ -492,7 +492,7 @@ class ARCameraRenderer(
     private fun checkSceneChange(currentDetections: List<DetectionWithDepth>) {
         val currentCount = currentDetections.size
         
-        if (currentCount != lastDetectionCount && !ttsHelper.isBusy() && isCameraActiveForRendering) {
+        if (currentCount != lastDetectionCount && isCameraActiveForRendering) {
             val announcement = if (currentCount == 0) {
                 "No detections"
             } else if (currentCount == 1) {
@@ -506,10 +506,10 @@ class ARCameraRenderer(
             // Update count immediately to prevent duplicate announcements
             lastDetectionCount = currentCount
             
-            // Speak with callback to re-enable checking after speech finishes
-            ttsHelper.speak(announcement) {
-                // After TTS finishes, the next detection cycle will check for changes again
-                Log.d(TAG, "TTS finished, ready for next scene change detection")
+            // 🟢 LOW priority - these background announcements have completion pending
+            // (won't interrupt each other, will skip if another LOW priority is active)
+            ttsHelper.speak(announcement, TtsHelper.Priority.LOW) {
+                Log.d(TAG, "Background TTS finished, ready for next scene change detection")
             }
         }
     }
@@ -518,11 +518,14 @@ class ARCameraRenderer(
      * Announce all objects organized by left and right side of screen
      */
     fun announceObjectsOnSide(tapX: Float, screenWidth: Float, detections: List<DetectionWithDepth>) {
-        // Stop any ongoing TTS first
-        ttsHelper.stop()
+        // 🔴 HIGH priority - user-triggered tap announcements
+        // Will interrupt any ongoing speech, but if another HIGH priority is playing, 
+        // will stop it without starting new one (handled by TtsHelper logic)
+        
+        Log.d(TAG, "🎤 Single tap detected - requesting HIGH priority TTS announcement")
         
         if (detections.isEmpty()) {
-            ttsHelper.speak("No objects detected")
+            ttsHelper.speak("No objects detected", TtsHelper.Priority.HIGH)
             return
         }
         
@@ -595,8 +598,8 @@ class ARCameraRenderer(
             }
         }
         
-        Log.d(TAG, "Announcing all objects: $announcement")
-        ttsHelper.speak(announcement)
+        Log.d(TAG, "🎤 HIGH priority announcement from tap: $announcement")
+        ttsHelper.speak(announcement, TtsHelper.Priority.HIGH)
     }
     
     override fun onDestroy(owner: LifecycleOwner) {
