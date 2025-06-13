@@ -85,9 +85,13 @@ class BoundingBoxOverlay @JvmOverloads constructor(
             // Prepare label text
             val distanceText = if (distance > 0) {
                 if (distance < 1000) "${distance}mm" else "${String.format("%.1f", distance / 1000f)}m"
-            } else "unknown"
+            } else ""
             
-            val labelText = "${detection.className} - $distanceText"
+            val labelText = if (distanceText.isNotEmpty()) {
+                "${detection.className} - $distanceText"
+            } else {
+                detection.className
+            }
             val confidence = String.format("%.1f%%", detection.confidence * 100)
             
             // Measure text dimensions

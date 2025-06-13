@@ -549,18 +549,17 @@ class ARCameraRenderer(
                 leftDetections.forEachIndexed { index, detection ->
                     if (index > 0) append(", ")
                     
-                    val distanceText = if (detection.distance > 0) {
-                        if (detection.distance < 1000) {
+                    if (detection.distance > 0) {
+                        val distanceText = if (detection.distance < 1000) {
                             "${detection.distance} millimeters"
                         } else {
                             val meters = detection.distance / 1000f
                             "${String.format("%.1f", meters)} meters"
                         }
+                        append("${detection.detection.className} at $distanceText")
                     } else {
-                        "unknown distance"
+                        append(detection.detection.className)
                     }
-                    
-                    append("${detection.detection.className} at $distanceText")
                 }
             }
             
@@ -575,18 +574,17 @@ class ARCameraRenderer(
                 rightDetections.forEachIndexed { index, detection ->
                     if (index > 0) append(", ")
                     
-                    val distanceText = if (detection.distance > 0) {
-                        if (detection.distance < 1000) {
+                    if (detection.distance > 0) {
+                        val distanceText = if (detection.distance < 1000) {
                             "${detection.distance} millimeters"
                         } else {
                             val meters = detection.distance / 1000f
                             "${String.format("%.1f", meters)} meters"
                         }
+                        append("${detection.detection.className} at $distanceText")
                     } else {
-                        "unknown distance"
+                        append(detection.detection.className)
                     }
-                    
-                    append("${detection.detection.className} at $distanceText")
                 }
             }
             
