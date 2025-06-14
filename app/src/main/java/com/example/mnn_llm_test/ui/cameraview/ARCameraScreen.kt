@@ -131,14 +131,32 @@ private fun ARCameraContent(
         }
     }
 
-    Column(
+        Column(
         modifier = Modifier.fillMaxSize()
     ) {
+        // Page title and description
+        if (hasCameraPermission && isCameraActive) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .semantics {
+                        contentDescription = "Camera View. Point your camera at objects to detect them. Use Live On/Off to toggle real-time announcements, Describe to get scene description, or Chat to capture and start conversation."
+                    }
+            ) {
+                Text(
+                    text = "Camera View",
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+        }
+        
         // Camera view section
         Box(
             modifier = Modifier.weight(1f),
             contentAlignment = Alignment.Center
-    ) {
+        ) {
         if (hasCameraPermission) {
             if (isCameraActive) {
                 ARCameraView(

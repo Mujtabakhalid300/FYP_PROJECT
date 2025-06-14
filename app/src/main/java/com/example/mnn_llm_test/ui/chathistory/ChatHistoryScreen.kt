@@ -125,6 +125,9 @@ fun ChatHistoryScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp)
+                .semantics {
+                    contentDescription = "Chat History. Browse your previous conversations. Use the search bar to find specific chats, or use the microphone to search by voice. Tap any chat to continue the conversation."
+                }
         ) {
             Text(
                 text = "Chat History",

@@ -24,6 +24,14 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import android.view.accessibility.AccessibilityManager
+import androidx.core.content.ContextCompat
 import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
@@ -78,6 +86,21 @@ fun ChatScreen(
     var isRecording by remember { mutableStateOf(false) }
     val globalSttHelper = MainActivity.globalSttHelper
     val isVoskInitialized = globalSttHelper?.isModelReady() == true
+
+    // TalkBack detection for dual touch handling
+    val accessibilityManager = remember { 
+        ContextCompat.getSystemService(context, AccessibilityManager::class.java) 
+    }
+    val isTalkBackEnabled = remember { mutableStateOf(false) }
+    
+    LaunchedEffect(Unit) {
+        // Check TalkBack state periodically
+        while (true) {
+            val isEnabled = accessibilityManager?.isTouchExplorationEnabled == true
+            isTalkBackEnabled.value = isEnabled
+            kotlinx.coroutines.delay(500) // Check every 500ms
+        }
+    }
 
     // Define callbacks for this screen
     val chatSttFinalCallback: (String) -> Unit = { transcription ->
@@ -258,30 +281,42 @@ fun ChatScreen(
                     enabled = !isGenerating
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                IconButton(onClick = {
-                    if (isVoskInitialized && globalSttHelper != null) {
-                        if (isRecording) {
-                            globalSttHelper.stopRecording()
-                            isRecording = false
-                            Log.d("ChatScreen", "Stopped STT recording.")
-                        } else {
-                            globalSttHelper.startRecording()
-                            isRecording = true
-                            Log.d("ChatScreen", "Started STT recording.")
+                
+                // STT IconButton with dual handler
+                TalkBackAwareIconButton(
+                    onClick = {
+                        if (isVoskInitialized && globalSttHelper != null) {
+                            if (isRecording) {
+                                globalSttHelper.stopRecording()
+                                isRecording = false
+                                Log.d("ChatScreen", "Stopped STT recording.")
+                            } else {
+                                globalSttHelper.startRecording()
+                                isRecording = true
+                                Log.d("ChatScreen", "Started STT recording.")
+                            }
                         }
-                    }
-                }, enabled = !isGenerating && isVoskInitialized && globalSttHelper != null) {
+                    },
+                    enabled = !isGenerating && isVoskInitialized && globalSttHelper != null,
+                    isTalkBackEnabled = isTalkBackEnabled.value,
+                    contentDescription = if (isRecording) "Stop Recording" else "Record Audio"
+                ) {
                     Icon(
                         imageVector = if (isRecording) Icons.Filled.Stop else Icons.Default.Mic,
-                        contentDescription = if (isRecording) "Stop Recording" else "Record Audio"
+                        contentDescription = null // Remove duplicate description
                     )
                 }
+                
                 Spacer(modifier = Modifier.width(8.dp))
-                Button(
+                
+                // Send Button with dual handler
+                TalkBackAwareButton(
                     onClick = sendMessage,
-                    enabled = !isGenerating && inputText.text.isNotBlank()
+                    enabled = !isGenerating && inputText.text.isNotBlank(),
+                    isTalkBackEnabled = isTalkBackEnabled.value,
+                    contentDescription = "Send Message"
                 ) {
-                    Icon(Icons.Default.Send, contentDescription = "Send Message")
+                    Icon(Icons.Default.Send, contentDescription = null) // Remove duplicate description
                 }
             }
         }
@@ -294,6 +329,24 @@ fun ChatScreen(
                 .padding(horizontal = 8.dp),
             reverseLayout = false
         ) {
+            // Page title and description
+            item("chat_title") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .semantics {
+                            contentDescription = "Chat View. Type messages to chat with the AI about your captured image. Use the microphone button to record voice input, or type directly in the text field."
+                        }
+                ) {
+                    Text(
+                        text = "Chat View",
+                        style = MaterialTheme.typography.headlineMedium,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+            }
+            
             if (initialImageProcessed) {
                 currentChatImage?.imagePath?.let { path ->
                     item("displayed_image") {
@@ -357,7 +410,7 @@ fun ImageCard(imagePath: String) {
                         .crossfade(true)
                         .build()
                 ),
-                contentDescription = "Navigated to chat view. Captured Image",
+                contentDescription = "Captured Image",
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 150.dp, max = 300.dp)
@@ -394,5 +447,87 @@ fun MessageBubble(message: ChatMessage, onRetry: () -> Unit) {
                 .widthIn(max = 300.dp),
             fontSize = 16.sp
         )
+    }
+}
+
+@Composable
+private fun TalkBackAwareIconButton(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    isTalkBackEnabled: Boolean,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    // Create fresh interaction source based on TalkBack state to avoid conflicts
+    val interactionSource = remember(isTalkBackEnabled) { MutableInteractionSource() }
+    
+    if (isTalkBackEnabled) {
+        // TalkBack is enabled - use semantic touch handling
+        Box(
+            modifier = modifier
+                .clearAndSetSemantics {
+                    this.contentDescription = contentDescription
+                    if (enabled) {
+                        onClick(label = null, action = { onClick(); true })
+                    }
+                }
+                .size(48.dp), // Standard IconButton size
+            contentAlignment = Alignment.Center
+        ) {
+            content()
+        }
+    } else {
+        // TalkBack is disabled - use normal IconButton
+        IconButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = modifier.semantics {
+                this.contentDescription = contentDescription
+            }
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun TalkBackAwareButton(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    isTalkBackEnabled: Boolean,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+    content: @Composable RowScope.() -> Unit
+) {
+    // Create fresh interaction source based on TalkBack state to avoid conflicts
+    val interactionSource = remember(isTalkBackEnabled) { MutableInteractionSource() }
+    
+    if (isTalkBackEnabled) {
+        // TalkBack is enabled - use semantic touch handling
+        Button(
+            onClick = { }, // Disable Button's onClick
+            enabled = enabled,
+            modifier = modifier
+                .clearAndSetSemantics {
+                    this.contentDescription = contentDescription
+                    if (enabled) {
+                        onClick(label = null, action = { onClick(); true })
+                    }
+                }
+        ) {
+            content()
+        }
+    } else {
+        // TalkBack is disabled - use normal Button
+        Button(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = modifier.semantics {
+                this.contentDescription = contentDescription
+            }
+        ) {
+            content()
+        }
     }
 } 
