@@ -16,6 +16,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -133,9 +137,22 @@ private fun NavigationSection(
     
     val interactionSource = remember { MutableInteractionSource() }
     
+    // Create proper accessibility description
+    val accessibilityDescription = when {
+        !enabled -> "$label View, unavailable"
+        isSelected -> "$label View, currently selected"
+        else -> "$label View"
+    }
+    
     Column(
         modifier = modifier
             .fillMaxHeight()
+            .clearAndSetSemantics {
+                contentDescription = accessibilityDescription
+                if (enabled) {
+                    onClick(label = null, action = { onClick(); true })
+                }
+            }
             .clickable(
                 interactionSource = interactionSource,
                 indication = androidx.compose.material.ripple.rememberRipple(),
@@ -147,7 +164,7 @@ private fun NavigationSection(
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = label,
+            contentDescription = null, // Remove duplicate description
             tint = iconColor,
             modifier = Modifier.size(28.dp)
         )
