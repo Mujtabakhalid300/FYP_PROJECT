@@ -138,76 +138,76 @@ private fun ARCameraContent(
         Box(
             modifier = Modifier.weight(1f),
             contentAlignment = Alignment.Center
-        ) {
-            if (hasCameraPermission) {
-                if (isCameraActive) {
-                    ARCameraView(
-                        context = context,
-                        lifecycleOwner = lifecycleOwner,
-                        onCapture = { bitmap ->
-                            if (bitmap != null) {
-                                coroutineScope.launch(Dispatchers.IO) {
-                                    // Save bitmap to file
-                                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-                                    val filename = "ARCapture_$timestamp.jpg"
-                                    val imageFile = File(context.filesDir, filename)
-                                    
-                                    try {
-                                        FileOutputStream(imageFile).use { outputStream ->
-                                            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
-                                        }
-                                        
-                                        val filePath = imageFile.absolutePath
-                                        Log.d("ARCameraScreen", "Photo captured: $filePath")
-                                        
-                                        // Create chat thread and associate image
-                                        val currentTime = System.currentTimeMillis()
-                                        val dateFormat = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
-                                        val formattedDate = dateFormat.format(Date(currentTime))
-                                        
-                                        val newChatThread = ChatThread(
-                                            title = formattedDate,
-                                            systemPrompt = null,
-                                            createdAt = Timestamp(currentTime),
-                                            updatedAt = Timestamp(currentTime)
-                                        )
-                                        val threadId = chatRepository.insertChatThread(newChatThread).toInt()
-
-                                        val newChatImage = ChatThreadImage(
-                                            threadId = threadId,
-                                            imagePath = filePath,
-                                            createdAt = Timestamp(System.currentTimeMillis())
-                                        )
-                                        chatRepository.insertChatThreadImage(newChatImage)
-                                        
-                                        launch(Dispatchers.Main) {
-                                            // 🔇 Stop TTS before navigation
-                                            MainActivity.globalTtsHelper?.forceStop()
-                                            navController.navigate(Screen.ChatView.routeWithArgs(threadId = threadId))
-                                        }
-                                    } catch (e: Exception) {
-                                        Log.e("ARCameraScreen", "Error saving image", e)
-                                    } finally {
-                                        bitmap.recycle()
+    ) {
+        if (hasCameraPermission) {
+            if (isCameraActive) {
+                ARCameraView(
+                    context = context,
+                    lifecycleOwner = lifecycleOwner,
+                    onCapture = { bitmap ->
+                        if (bitmap != null) {
+                            coroutineScope.launch(Dispatchers.IO) {
+                                // Save bitmap to file
+                                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                                val filename = "ARCapture_$timestamp.jpg"
+                                val imageFile = File(context.filesDir, filename)
+                                
+                                try {
+                                    FileOutputStream(imageFile).use { outputStream ->
+                                        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
                                     }
+                                    
+                                    val filePath = imageFile.absolutePath
+                                    Log.d("ARCameraScreen", "Photo captured: $filePath")
+                                    
+                                    // Create chat thread and associate image
+                                    val currentTime = System.currentTimeMillis()
+                                    val dateFormat = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
+                                    val formattedDate = dateFormat.format(Date(currentTime))
+                                    
+                                    val newChatThread = ChatThread(
+                                        title = formattedDate,
+                                        systemPrompt = null,
+                                        createdAt = Timestamp(currentTime),
+                                        updatedAt = Timestamp(currentTime)
+                                    )
+                                    val threadId = chatRepository.insertChatThread(newChatThread).toInt()
+
+                                    val newChatImage = ChatThreadImage(
+                                        threadId = threadId,
+                                        imagePath = filePath,
+                                        createdAt = Timestamp(System.currentTimeMillis())
+                                    )
+                                    chatRepository.insertChatThreadImage(newChatImage)
+                                    
+                                    launch(Dispatchers.Main) {
+                                        // 🔇 Stop TTS before navigation
+                                        MainActivity.globalTtsHelper?.forceStop()
+                                        navController.navigate(Screen.ChatView.routeWithArgs(threadId = threadId))
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e("ARCameraScreen", "Error saving image", e)
+                                } finally {
+                                    bitmap.recycle()
                                 }
-                            } else {
-                                Log.e("ARCameraScreen", "Failed to capture image")
                             }
-                        },
-                        onArCoreSessionCreated = { helper, rendererInstance ->
-                            arCoreSessionHelper = helper
-                            renderer = rendererInstance
-                            
-                            // Set the initial camera state based on current isCameraActive value
-                            Log.d("ARCameraScreen", "🎯 Renderer created, setting initial camera active state: $isCameraActive")
-                            rendererInstance.setCameraActive(isCameraActive)
+                        } else {
+                            Log.e("ARCameraScreen", "Failed to capture image")
+                        }
+                    },
+                    onArCoreSessionCreated = { helper, rendererInstance ->
+                        arCoreSessionHelper = helper
+                        renderer = rendererInstance
+                        
+                        // Set the initial camera state based on current isCameraActive value
+                        Log.d("ARCameraScreen", "🎯 Renderer created, setting initial camera active state: $isCameraActive")
+                        rendererInstance.setCameraActive(isCameraActive)
                             
                             // Initialize the toggle state with the renderer
                             rendererInstance.setRealTimeAnnouncementEnabled(isRealTimeAnnouncementEnabled)
-                        },
+                    },
                         modifier = Modifier.fillMaxSize()
-                    )
+                )
                 } else {
                     // Camera is not active - show nothing during transitions
                 }
@@ -215,11 +215,11 @@ private fun ARCameraContent(
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Camera permission is required. Please grant permission.")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(onClick = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }) {
-                        Text("Grant Camera Permission")
-                    }
+            Text("Camera permission is required. Please grant permission.")
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }) {
+                Text("Grant Camera Permission")
+            }
                 }
             }
         }

@@ -88,15 +88,8 @@ class TtsHelper(private val context: Context) : TextToSpeech.OnInitListener {
         // Priority-based interruption logic
         if (isSpeaking) {
             when {
-                priority == Priority.HIGH && currentPriority == Priority.HIGH -> {
-                    // HIGH priority interrupting another HIGH priority: stop current but don't start new one
-                    Log.d("TtsHelper", "🔴 HIGH priority interrupting another HIGH priority - stopping without replacement")
-                    stop()
-                    onFinished?.invoke() // Call callback immediately
-                    return // Don't start new speech
-                }
                 priority == Priority.HIGH -> {
-                    // HIGH priority: interrupt any other priority speech
+                    // HIGH priority: always interrupt and start new speech
                     Log.d("TtsHelper", "🔴 HIGH priority speech interrupting current TTS")
                     stop()
                 }
