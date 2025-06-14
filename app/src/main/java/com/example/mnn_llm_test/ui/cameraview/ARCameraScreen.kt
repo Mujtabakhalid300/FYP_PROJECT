@@ -44,7 +44,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import android.widget.FrameLayout
 import android.view.ViewGroup
-import com.example.mnn_llm_test.arcore.BoundingBoxOverlay
+// import com.example.mnn_llm_test.arcore.BoundingBoxOverlay
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.navigation.NavHostController
@@ -131,7 +131,7 @@ private fun ARCameraContent(
         }
     }
 
-        Column(
+    Column(
         modifier = Modifier.fillMaxSize()
     ) {
         // Page title and description
@@ -147,7 +147,11 @@ private fun ARCameraContent(
                 Text(
                     text = "Camera View",
                     style = MaterialTheme.typography.headlineMedium,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    modifier = Modifier
+                        .padding(bottom = 8.dp)
+                        .semantics {
+                            contentDescription = "Camera View page title. This is the main camera interface for object detection, distance estimation, and scene analysis."
+                        }
                 )
             }
         }
@@ -156,7 +160,7 @@ private fun ARCameraContent(
         Box(
             modifier = Modifier.weight(1f),
             contentAlignment = Alignment.Center
-        ) {
+    ) {
         if (hasCameraPermission) {
             if (isCameraActive) {
                 ARCameraView(
@@ -273,20 +277,22 @@ fun ARCameraView(
         // Camera preview
         AndroidView(
             factory = { ctx ->
-            // Create a FrameLayout to hold both GLSurfaceView and BoundingBoxOverlay
+            // Create a FrameLayout to hold GLSurfaceView (BoundingBoxOverlay commented out)
             FrameLayout(ctx).apply {
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
                 
-                // Create the BoundingBoxOverlay
+                // Create the BoundingBoxOverlay (commented out)
+                /*
                 val boundingBoxOverlay = BoundingBoxOverlay(ctx).apply {
                     layoutParams = FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.MATCH_PARENT,
                         FrameLayout.LayoutParams.MATCH_PARENT
                     )
                 }
+                */
                 
                 // Create the GLSurfaceView
                 val glSurfaceView = GLSurfaceView(ctx).apply {
@@ -302,15 +308,17 @@ fun ARCameraView(
                 // Initialize ARCore components without overlay callback
                 val arCoreSessionHelper = ARCoreSessionLifecycleHelper(context as androidx.activity.ComponentActivity)
                 
-                // Create renderer with bounding box overlay callback
+                // Create renderer (bounding box overlay callback commented out)
                 val renderer = ARCameraRenderer(
                     context as androidx.activity.ComponentActivity, 
                     onCapture,
                     onDetectionUpdate = { detections ->
-                        // Update overlay on main thread
+                        // Update overlay on main thread (commented out)
+                        /*
                         boundingBoxOverlay.post {
                             boundingBoxOverlay.updateDetections(detections)
                         }
+                        */
                     }
                 )
                 
@@ -356,9 +364,9 @@ fun ARCameraView(
                 
                 // Touch handling removed - camera interactions now handled by buttons
                 
-                // Add both views to the FrameLayout
+                // Add GLSurfaceView to the FrameLayout (BoundingBoxOverlay commented out)
                 addView(glSurfaceView)
-                addView(boundingBoxOverlay)
+                // addView(boundingBoxOverlay)
                 
                 // Notify parent about ARCore session creation
                 onArCoreSessionCreated(arCoreSessionHelper, renderer)

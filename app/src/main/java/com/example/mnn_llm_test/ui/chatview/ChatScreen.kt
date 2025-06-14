@@ -342,7 +342,11 @@ fun ChatScreen(
                     Text(
                         text = "Chat View",
                         style = MaterialTheme.typography.headlineMedium,
-                        modifier = Modifier.padding(bottom = 8.dp)
+                        modifier = Modifier
+                            .padding(bottom = 8.dp)
+                            .semantics {
+                                contentDescription = "Chat View page title. This is the conversation interface for chatting with AI about your captured images."
+                            }
                     )
                 }
             }

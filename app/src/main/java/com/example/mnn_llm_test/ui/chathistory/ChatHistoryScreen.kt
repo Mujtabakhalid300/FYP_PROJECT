@@ -132,7 +132,11 @@ fun ChatHistoryScreen(
             Text(
                 text = "Chat History",
                 style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier
+                    .padding(bottom = 16.dp)
+                    .semantics {
+                        contentDescription = "Chat History. This is the archive of all your previous conversations."
+                    }
             )
 
             // Search bar with STT support

@@ -67,24 +67,11 @@ fun WelcomeScreen(context: Context, modifier: Modifier) {
             
             // Loading message
             Text(
-                text = "Initializing AI Models, TTS & STT...",
+                text = "Initialising",
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onBackground,
                 textAlign = TextAlign.Center,
                 fontWeight = FontWeight.Medium
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Offline capability message
-            Text(
-                text = "Works offline once models are loaded",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.semantics { 
-                    contentDescription = "App works offline once AI models are initialized" 
-                }
             )
         }
     }
