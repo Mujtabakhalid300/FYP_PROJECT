@@ -69,6 +69,7 @@ import com.google.ar.core.exceptions.*
 import com.example.mnn_llm_test.arcore.common.helpers.*
 import com.example.mnn_llm_test.arcore.common.samplerender.SampleRender
 import com.example.mnn_llm_test.arcore.ARCameraRenderer
+import com.example.mnn_llm_test.utils.TtsHelper
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,6 +109,7 @@ private fun ARCameraContent(
     
     // State for camera control buttons
     var isRealTimeAnnouncementEnabled by remember { mutableStateOf(false) }
+    var isDescribeActive by remember { mutableStateOf(false) }
 
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -128,6 +130,27 @@ private fun ARCameraContent(
         renderer?.let { 
             Log.d("ARCameraScreen", "📡 Setting camera active state to: $isCameraActive")
             it.setCameraActive(isCameraActive) 
+        }
+    }
+    
+    // Monitor TTS state to update describe button active state
+    LaunchedEffect(Unit) {
+        while (true) {
+            val ttsHelper = MainActivity.globalTtsHelper
+            if (ttsHelper != null) {
+                val isTtsBusy = ttsHelper.isBusy()
+                val isHighPriority = ttsHelper.getCurrentPriority() == TtsHelper.Priority.HIGH
+                
+                // Update describe active state based on HIGH priority TTS
+                if (isDescribeActive && (!isTtsBusy || !isHighPriority)) {
+                    // TTS finished or was interrupted by non-HIGH priority
+                    isDescribeActive = false
+                } else if (!isDescribeActive && isTtsBusy && isHighPriority) {
+                    // HIGH priority TTS started (could be from describe button)
+                    isDescribeActive = true
+                }
+            }
+            kotlinx.coroutines.delay(100) // Check every 100ms for responsive UI
         }
     }
 
@@ -233,12 +256,22 @@ private fun ARCameraContent(
         if (hasCameraPermission && isCameraActive) {
             CameraControlButtons(
                 isRealTimeAnnouncementEnabled = isRealTimeAnnouncementEnabled,
+                isDescribeActive = isDescribeActive,
                 onToggleRealTimeAnnouncement = { enabled ->
                     isRealTimeAnnouncementEnabled = enabled
                     renderer?.setRealTimeAnnouncementEnabled(enabled)
                 },
                 onDescribeScene = {
-                    renderer?.describeCurrentScene()
+                    val ttsHelper = MainActivity.globalTtsHelper
+                    if (isDescribeActive && ttsHelper?.isBusy() == true && ttsHelper.getCurrentPriority() == TtsHelper.Priority.HIGH) {
+                        // Stop current HIGH priority TTS (describe is active)
+                        ttsHelper.forceStop()
+                        isDescribeActive = false
+                    } else {
+                        // Start new describe scene
+                        isDescribeActive = true
+                        renderer?.describeCurrentScene()
+                    }
                 },
                 onCaptureAndChat = {
                     renderer?.requestCapture()
@@ -414,6 +447,7 @@ fun ARCameraView(
 @Composable
 fun CameraControlButtons(
     isRealTimeAnnouncementEnabled: Boolean,
+    isDescribeActive: Boolean,
     onToggleRealTimeAnnouncement: (Boolean) -> Unit,
     onDescribeScene: () -> Unit,
     onCaptureAndChat: () -> Unit,
@@ -460,11 +494,15 @@ fun CameraControlButtons(
             // Describe current scene
             CameraControlSection(
                 icon = Icons.Default.RecordVoiceOver,
-                label = "Describe",
+                label = if (isDescribeActive) "Stop" else "Describe",
                 isEnabled = true,
-                isSelected = false,
+                isSelected = isDescribeActive,
                 onClick = onDescribeScene,
-                accessibilityDescription = "Describe what the camera sees around you",
+                accessibilityDescription = if (isDescribeActive) {
+                    "Scene description in progress, tap to stop"
+                } else {
+                    "Describe what the camera sees around you"
+                },
                 modifier = Modifier
                     .weight(1f)
                     .border(
