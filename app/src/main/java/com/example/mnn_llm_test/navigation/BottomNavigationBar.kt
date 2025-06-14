@@ -21,6 +21,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.onClick
+import android.view.accessibility.AccessibilityManager
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -120,13 +124,30 @@ private fun NavigationSection(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val iconColor = when {
         !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
         isSelected -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
     }
     
-    val interactionSource = remember { MutableInteractionSource() }
+    // Detect TalkBack state
+    val accessibilityManager = remember { 
+        ContextCompat.getSystemService(context, AccessibilityManager::class.java) 
+    }
+    val isTalkBackEnabled = remember { mutableStateOf(false) }
+    
+    LaunchedEffect(Unit) {
+        // Check TalkBack state periodically
+        while (true) {
+            val isEnabled = accessibilityManager?.isTouchExplorationEnabled == true
+            isTalkBackEnabled.value = isEnabled
+            kotlinx.coroutines.delay(500) // Check every 500ms
+        }
+    }
+    
+    // Create fresh interaction source based on TalkBack state to avoid conflicts
+    val interactionSource = remember(isTalkBackEnabled.value) { MutableInteractionSource() }
     
     // Create proper accessibility description
     val accessibilityDescription = when {
@@ -135,8 +156,10 @@ private fun NavigationSection(
         else -> "$label View"
     }
     
-    Column(
-        modifier = modifier
+    // Apply different touch handling strategies based on TalkBack state
+    val columnModifier = if (isTalkBackEnabled.value) {
+        // TalkBack is enabled - use semantic touch handling
+        modifier
             .fillMaxHeight()
             .clearAndSetSemantics {
                 contentDescription = accessibilityDescription
@@ -144,12 +167,23 @@ private fun NavigationSection(
                     onClick(label = null, action = { onClick(); true })
                 }
             }
+    } else {
+        // TalkBack is disabled - use normal clickable only
+        modifier
+            .fillMaxHeight()
+            .semantics {
+                contentDescription = accessibilityDescription
+            }
             .clickable(
                 interactionSource = interactionSource,
                 indication = androidx.compose.material.ripple.rememberRipple(),
                 enabled = enabled,
                 onClick = onClick
-            ),
+            )
+    }
+    
+    Column(
+        modifier = columnModifier,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
