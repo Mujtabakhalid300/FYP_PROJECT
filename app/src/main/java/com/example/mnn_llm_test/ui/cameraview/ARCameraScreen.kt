@@ -12,6 +12,8 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Camera
@@ -27,6 +29,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.animation.core.animate
@@ -414,94 +418,102 @@ fun CameraControlButtons(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .height(80.dp), // Match navigation bar height
         color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 4.dp,
-        shape = MaterialTheme.shapes.medium
+        shadowElevation = 8.dp
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Toggle real-time announcements
-            Button(
+            CameraControlSection(
+                icon = if (isRealTimeAnnouncementEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                label = if (isRealTimeAnnouncementEnabled) "Live On" else "Live Off",
+                isEnabled = true,
+                isSelected = isRealTimeAnnouncementEnabled,
                 onClick = { onToggleRealTimeAnnouncement(!isRealTimeAnnouncementEnabled) },
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 4.dp)
-                    .semantics {
-                        contentDescription = if (isRealTimeAnnouncementEnabled) {
-                            "Real time announcements enabled, tap to disable"
-                        } else {
-                            "Real time announcements disabled, tap to enable"
-                        }
-                    },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isRealTimeAnnouncementEnabled) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.outline
-                    }
-                )
-            ) {
-                Icon(
-                    imageVector = if (isRealTimeAnnouncementEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = if (isRealTimeAnnouncementEnabled) "Live On" else "Live Off",
-                    style = MaterialTheme.typography.labelMedium
-                )
-            }
+                accessibilityDescription = if (isRealTimeAnnouncementEnabled) {
+                    "Real time announcements enabled, tap to disable"
+                } else {
+                    "Real time announcements disabled, tap to enable"
+                },
+                modifier = Modifier.weight(1f)
+            )
             
             // Describe current scene
-            Button(
+            CameraControlSection(
+                icon = Icons.Default.RecordVoiceOver,
+                label = "Describe",
+                isEnabled = true,
+                isSelected = false,
                 onClick = onDescribeScene,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 4.dp)
-                    .semantics {
-                        contentDescription = "Describe what the camera sees around you"
-                    }
-            ) {
-                Icon(
-                    imageVector = Icons.Default.RecordVoiceOver,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "Describe",
-                    style = MaterialTheme.typography.labelMedium
-                )
-            }
+                accessibilityDescription = "Describe what the camera sees around you",
+                modifier = Modifier.weight(1f)
+            )
             
             // Capture and start chat
-            Button(
+            CameraControlSection(
+                icon = Icons.Default.Chat,
+                label = "Chat",
+                isEnabled = true,
+                isSelected = false,
                 onClick = onCaptureAndChat,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 4.dp)
-                    .semantics {
-                        contentDescription = "Capture current image and start chat conversation"
-                    }
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Chat,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "Chat",
-                    style = MaterialTheme.typography.labelMedium
-                )
-            }
+                accessibilityDescription = "Capture current image and start chat conversation",
+                modifier = Modifier.weight(1f)
+            )
         }
+    }
+}
+
+@Composable
+private fun CameraControlSection(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    isEnabled: Boolean,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    accessibilityDescription: String,
+    modifier: Modifier = Modifier
+) {
+    val iconColor = when {
+        !isEnabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+        isSelected -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+    }
+    
+    val interactionSource = remember { MutableInteractionSource() }
+    
+    Column(
+        modifier = modifier
+            .fillMaxHeight()
+            .clearAndSetSemantics {
+                contentDescription = accessibilityDescription
+                if (isEnabled) {
+                    onClick(label = null, action = { onClick(); true })
+                }
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = androidx.compose.material.ripple.rememberRipple(),
+                enabled = isEnabled,
+                onClick = onClick
+            ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null, // Remove duplicate description
+            tint = iconColor,
+            modifier = Modifier.size(28.dp)
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = iconColor
+        )
     }
 } 
