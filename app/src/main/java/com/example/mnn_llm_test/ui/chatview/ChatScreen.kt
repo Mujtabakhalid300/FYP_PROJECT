@@ -357,7 +357,7 @@ fun ImageCard(imagePath: String) {
                         .crossfade(true)
                         .build()
                 ),
-                contentDescription = "Captured Image",
+                contentDescription = "Navigated to chat view. Captured Image",
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 150.dp, max = 300.dp)
