@@ -5,7 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Camera
-import androidx.compose.material.icons.filled.Chat
+
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -24,8 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.example.mnntest.ChatApplication
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
+
 import com.example.mnn_llm_test.MainActivity
 
 @Composable
@@ -37,7 +36,6 @@ fun BottomNavigationBar(
     val repository = (context.applicationContext as ChatApplication).repository
     val allChatThreads by repository.getAllChatThreads().collectAsState(initial = emptyList())
     val hasExistingChats = allChatThreads.isNotEmpty()
-    val coroutineScope = rememberCoroutineScope()
     
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -70,29 +68,6 @@ fun BottomNavigationBar(
                                 inclusive = false
                             }
                             launchSingleTop = true
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1f)
-            )
-            
-            // Chat Section
-            NavigationSection(
-                icon = Icons.Default.Chat,
-                label = "Chat",
-                isSelected = currentRoute?.startsWith("chat_view") == true,
-                enabled = hasExistingChats,
-                onClick = {
-                    if (hasExistingChats && currentRoute?.startsWith("chat_view") != true) {
-                        // 🔇 Stop TTS before navigation
-                        MainActivity.globalTtsHelper?.forceStop()
-                        coroutineScope.launch {
-                            val latestThread = allChatThreads.firstOrNull()
-                            latestThread?.let { thread ->
-                                navController.navigate(Screen.ChatView.routeWithArgs(threadId = thread.id)) {
-                                    launchSingleTop = true
-                                }
-                            }
                         }
                     }
                 },
