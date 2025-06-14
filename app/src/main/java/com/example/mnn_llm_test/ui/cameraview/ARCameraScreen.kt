@@ -69,7 +69,6 @@ import com.google.ar.core.exceptions.*
 import com.example.mnn_llm_test.arcore.common.helpers.*
 import com.example.mnn_llm_test.arcore.common.samplerender.SampleRender
 import com.example.mnn_llm_test.arcore.ARCameraRenderer
-import com.example.mnn_llm_test.utils.TtsHelper
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,7 +108,6 @@ private fun ARCameraContent(
     
     // State for camera control buttons
     var isRealTimeAnnouncementEnabled by remember { mutableStateOf(false) }
-    var isDescribeActive by remember { mutableStateOf(false) }
 
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -132,27 +130,6 @@ private fun ARCameraContent(
             it.setCameraActive(isCameraActive) 
         }
     }
-    
-    // Monitor TTS state to update describe button active state
-    LaunchedEffect(Unit) {
-        while (true) {
-            val ttsHelper = MainActivity.globalTtsHelper
-            if (ttsHelper != null) {
-                val isTtsBusy = ttsHelper.isBusy()
-                val isHighPriority = ttsHelper.getCurrentPriority() == TtsHelper.Priority.HIGH
-                
-                // Update describe active state based on HIGH priority TTS
-                if (isDescribeActive && (!isTtsBusy || !isHighPriority)) {
-                    // TTS finished or was interrupted by non-HIGH priority
-                    isDescribeActive = false
-                } else if (!isDescribeActive && isTtsBusy && isHighPriority) {
-                    // HIGH priority TTS started (could be from describe button)
-                    isDescribeActive = true
-                }
-            }
-            kotlinx.coroutines.delay(100) // Check every 100ms for responsive UI
-        }
-    }
 
     Column(
         modifier = Modifier.fillMaxSize()
@@ -163,73 +140,77 @@ private fun ARCameraContent(
             contentAlignment = Alignment.Center
         ) {
             if (hasCameraPermission) {
-                ARCameraView(
-                    context = context,
-                    lifecycleOwner = lifecycleOwner,
-                    onCapture = { bitmap ->
-                        if (bitmap != null) {
-                            coroutineScope.launch(Dispatchers.IO) {
-                                // Save bitmap to file
-                                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-                                val filename = "ARCapture_$timestamp.jpg"
-                                val imageFile = File(context.filesDir, filename)
-                                
-                                try {
-                                    FileOutputStream(imageFile).use { outputStream ->
-                                        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
-                                    }
+                if (isCameraActive) {
+                    ARCameraView(
+                        context = context,
+                        lifecycleOwner = lifecycleOwner,
+                        onCapture = { bitmap ->
+                            if (bitmap != null) {
+                                coroutineScope.launch(Dispatchers.IO) {
+                                    // Save bitmap to file
+                                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                                    val filename = "ARCapture_$timestamp.jpg"
+                                    val imageFile = File(context.filesDir, filename)
                                     
-                                    val filePath = imageFile.absolutePath
-                                    Log.d("ARCameraScreen", "Photo captured: $filePath")
-                                    
-                                    // Create chat thread and associate image
-                                    val currentTime = System.currentTimeMillis()
-                                    val dateFormat = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
-                                    val formattedDate = dateFormat.format(Date(currentTime))
-                                    
-                                    val newChatThread = ChatThread(
-                                        title = formattedDate,
-                                        systemPrompt = null,
-                                        createdAt = Timestamp(currentTime),
-                                        updatedAt = Timestamp(currentTime)
-                                    )
-                                    val threadId = chatRepository.insertChatThread(newChatThread).toInt()
+                                    try {
+                                        FileOutputStream(imageFile).use { outputStream ->
+                                            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
+                                        }
+                                        
+                                        val filePath = imageFile.absolutePath
+                                        Log.d("ARCameraScreen", "Photo captured: $filePath")
+                                        
+                                        // Create chat thread and associate image
+                                        val currentTime = System.currentTimeMillis()
+                                        val dateFormat = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
+                                        val formattedDate = dateFormat.format(Date(currentTime))
+                                        
+                                        val newChatThread = ChatThread(
+                                            title = formattedDate,
+                                            systemPrompt = null,
+                                            createdAt = Timestamp(currentTime),
+                                            updatedAt = Timestamp(currentTime)
+                                        )
+                                        val threadId = chatRepository.insertChatThread(newChatThread).toInt()
 
-                                    val newChatImage = ChatThreadImage(
-                                        threadId = threadId,
-                                        imagePath = filePath,
-                                        createdAt = Timestamp(System.currentTimeMillis())
-                                    )
-                                    chatRepository.insertChatThreadImage(newChatImage)
-                                    
-                                    launch(Dispatchers.Main) {
-                                        // 🔇 Stop TTS before navigation
-                                        MainActivity.globalTtsHelper?.forceStop()
-                                        navController.navigate(Screen.ChatView.routeWithArgs(threadId = threadId))
+                                        val newChatImage = ChatThreadImage(
+                                            threadId = threadId,
+                                            imagePath = filePath,
+                                            createdAt = Timestamp(System.currentTimeMillis())
+                                        )
+                                        chatRepository.insertChatThreadImage(newChatImage)
+                                        
+                                        launch(Dispatchers.Main) {
+                                            // 🔇 Stop TTS before navigation
+                                            MainActivity.globalTtsHelper?.forceStop()
+                                            navController.navigate(Screen.ChatView.routeWithArgs(threadId = threadId))
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e("ARCameraScreen", "Error saving image", e)
+                                    } finally {
+                                        bitmap.recycle()
                                     }
-                                } catch (e: Exception) {
-                                    Log.e("ARCameraScreen", "Error saving image", e)
-                                } finally {
-                                    bitmap.recycle()
                                 }
+                            } else {
+                                Log.e("ARCameraScreen", "Failed to capture image")
                             }
-                        } else {
-                            Log.e("ARCameraScreen", "Failed to capture image")
-                        }
-                    },
-                    onArCoreSessionCreated = { helper, rendererInstance ->
-                        arCoreSessionHelper = helper
-                        renderer = rendererInstance
-                        
-                        // Set the initial camera state based on current isCameraActive value
-                        Log.d("ARCameraScreen", "🎯 Renderer created, setting initial camera active state: $isCameraActive")
-                        rendererInstance.setCameraActive(isCameraActive)
-                        
-                        // Initialize the toggle state with the renderer
-                        rendererInstance.setRealTimeAnnouncementEnabled(isRealTimeAnnouncementEnabled)
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
+                        },
+                        onArCoreSessionCreated = { helper, rendererInstance ->
+                            arCoreSessionHelper = helper
+                            renderer = rendererInstance
+                            
+                            // Set the initial camera state based on current isCameraActive value
+                            Log.d("ARCameraScreen", "🎯 Renderer created, setting initial camera active state: $isCameraActive")
+                            rendererInstance.setCameraActive(isCameraActive)
+                            
+                            // Initialize the toggle state with the renderer
+                            rendererInstance.setRealTimeAnnouncementEnabled(isRealTimeAnnouncementEnabled)
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    // Camera is not active - show nothing during transitions
+                }
             } else {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -247,22 +228,12 @@ private fun ARCameraContent(
         if (hasCameraPermission && isCameraActive) {
             CameraControlButtons(
                 isRealTimeAnnouncementEnabled = isRealTimeAnnouncementEnabled,
-                isDescribeActive = isDescribeActive,
                 onToggleRealTimeAnnouncement = { enabled ->
                     isRealTimeAnnouncementEnabled = enabled
                     renderer?.setRealTimeAnnouncementEnabled(enabled)
                 },
                 onDescribeScene = {
-                    val ttsHelper = MainActivity.globalTtsHelper
-                    if (isDescribeActive && ttsHelper?.isBusy() == true && ttsHelper.getCurrentPriority() == TtsHelper.Priority.HIGH) {
-                        // Stop current HIGH priority TTS (describe is active)
-                        ttsHelper.forceStop()
-                        isDescribeActive = false
-                    } else {
-                        // Start new describe scene
-                        isDescribeActive = true
-                        renderer?.describeCurrentScene()
-                    }
+                    renderer?.describeCurrentScene()
                 },
                 onCaptureAndChat = {
                     renderer?.requestCapture()
@@ -377,13 +348,14 @@ fun ARCameraView(
         },
         modifier = Modifier.fillMaxSize()
         )
+        
+
     }
 }
 
 @Composable
 fun CameraControlButtons(
     isRealTimeAnnouncementEnabled: Boolean,
-    isDescribeActive: Boolean,
     onToggleRealTimeAnnouncement: (Boolean) -> Unit,
     onDescribeScene: () -> Unit,
     onCaptureAndChat: () -> Unit,
@@ -430,15 +402,11 @@ fun CameraControlButtons(
             // Describe current scene
             CameraControlSection(
                 icon = Icons.Default.RecordVoiceOver,
-                label = if (isDescribeActive) "Stop" else "Describe",
+                label = "Describe",
                 isEnabled = true,
-                isSelected = isDescribeActive,
+                isSelected = false,
                 onClick = onDescribeScene,
-                accessibilityDescription = if (isDescribeActive) {
-                    "Scene description in progress, tap to stop"
-                } else {
-                    "Describe what the camera sees around you"
-                },
+                accessibilityDescription = "Describe what the camera sees around you",
                 modifier = Modifier
                     .weight(1f)
                     .border(
