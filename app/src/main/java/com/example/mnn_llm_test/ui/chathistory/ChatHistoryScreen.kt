@@ -18,6 +18,8 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastAny
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.navigation.NavHostController
 import com.example.mnn_llm_test.navigation.Screen
 import com.example.mnntest.ChatApplication
@@ -247,9 +249,19 @@ private fun ChatHistoryItem(
     onDeleteClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val title = thread.title ?: formatDate(thread.updatedAt)
+    val dateCreated = formatDate(thread.createdAt)
+    
+    // Create TalkBack-friendly description
+    val talkBackDescription = "Chat History Item Titled: $title, created at $dateCreated"
+    
     Card(
         onClick = onItemClick,
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics {
+                contentDescription = talkBackDescription
+            }
     ) {
         Row(
             modifier = Modifier
@@ -261,14 +273,14 @@ private fun ChatHistoryItem(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    text = thread.title ?: formatDate(thread.updatedAt),
+                    text = title,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = formatDate(thread.updatedAt),
+                    text = "Date created: $dateCreated",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
