@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.border
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Camera
@@ -415,10 +416,16 @@ fun CameraControlButtons(
     onCaptureAndChat: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+    
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .height(80.dp), // Match navigation bar height
+            .height(80.dp) // Match navigation bar height
+            .border(
+                width = 1.dp,
+                color = borderColor
+            ),
         color = MaterialTheme.colorScheme.surface,
         shadowElevation = 8.dp
     ) {
@@ -439,7 +446,12 @@ fun CameraControlButtons(
                 } else {
                     "Real time announcements disabled, tap to enable"
                 },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .border(
+                        width = 1.dp,
+                        color = borderColor
+                    )
             )
             
             // Describe current scene
@@ -450,7 +462,12 @@ fun CameraControlButtons(
                 isSelected = false,
                 onClick = onDescribeScene,
                 accessibilityDescription = "Describe what the camera sees around you",
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .border(
+                        width = 1.dp,
+                        color = borderColor
+                    )
             )
             
             // Capture and start chat
@@ -461,7 +478,12 @@ fun CameraControlButtons(
                 isSelected = false,
                 onClick = onCaptureAndChat,
                 accessibilityDescription = "Capture current image and start chat conversation",
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .border(
+                        width = 1.dp,
+                        color = borderColor
+                    )
             )
         }
     }

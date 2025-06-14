@@ -3,6 +3,7 @@ package com.example.mnn_llm_test.navigation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.border
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Camera
 
@@ -39,11 +40,16 @@ fun BottomNavigationBar(
     
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
     
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .height(80.dp),
+            .height(80.dp)
+            .border(
+                width = 1.dp,
+                color = borderColor
+            ),
         color = MaterialTheme.colorScheme.surface,
         shadowElevation = 8.dp
     ) {
@@ -71,7 +77,12 @@ fun BottomNavigationBar(
                         }
                     }
                 },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .border(
+                        width = 1.dp,
+                        color = borderColor
+                    )
             )
             
             // History Section
@@ -89,7 +100,12 @@ fun BottomNavigationBar(
                         }
                     }
                 },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .border(
+                        width = 1.dp,
+                        color = borderColor
+                    )
             )
         }
     }
