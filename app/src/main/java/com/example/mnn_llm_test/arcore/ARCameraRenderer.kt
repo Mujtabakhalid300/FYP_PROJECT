@@ -77,6 +77,9 @@ class ARCameraRenderer(
     
     // Scene change detection
     private var lastDetectionCount = 0
+    
+    // Toggle for real-time object detection announcements
+    private var isRealTimeAnnouncementEnabled = false
 
     data class DepthData(
         val buffer: ByteArray,
@@ -487,12 +490,12 @@ class ARCameraRenderer(
     }
     
     /**
-     * Check for scene changes and announce detection count
+     * Check for scene changes and announce detection count (only if enabled)
      */
     private fun checkSceneChange(currentDetections: List<DetectionWithDepth>) {
         val currentCount = currentDetections.size
         
-        if (currentCount != lastDetectionCount && isCameraActiveForRendering) {
+        if (currentCount != lastDetectionCount && isCameraActiveForRendering && isRealTimeAnnouncementEnabled) {
             val announcement = if (currentCount == 0) {
                 "No detections"
             } else if (currentCount == 1) {
@@ -511,7 +514,41 @@ class ARCameraRenderer(
             MainActivity.globalTtsHelper?.speak(announcement, TtsHelper.Priority.LOW) {
                 Log.d(TAG, "Background TTS finished, ready for next scene change detection")
             }
+        } else {
+            // Always update count even when announcements are disabled
+            lastDetectionCount = currentCount
         }
+    }
+    
+    /**
+     * Toggle real-time object detection announcements
+     */
+    fun setRealTimeAnnouncementEnabled(enabled: Boolean) {
+        isRealTimeAnnouncementEnabled = enabled
+        Log.d(TAG, "Real-time announcements ${if (enabled) "enabled" else "disabled"}")
+        
+        if (!enabled) {
+            // Stop any ongoing LOW priority announcements when disabling
+            MainActivity.globalTtsHelper?.stopIfPriority(TtsHelper.Priority.LOW)
+        }
+    }
+    
+    /**
+     * Get current real-time announcement state
+     */
+    fun isRealTimeAnnouncementEnabled(): Boolean = isRealTimeAnnouncementEnabled
+    
+    /**
+     * Describe the current scene (button-triggered version of single tap)
+     */
+    fun describeCurrentScene() {
+        val detections = currentDetectionResults ?: emptyList()
+        
+        // Use the center of screen as reference point for left/right organization
+        val screenWidth = 1.0f // Normalized width
+        val centerX = screenWidth / 2f
+        
+        announceObjectsOnSide(centerX, screenWidth, detections)
     }
     
     /**

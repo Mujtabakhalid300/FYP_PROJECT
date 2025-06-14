@@ -163,6 +163,16 @@ class TtsHelper(private val context: Context) : TextToSpeech.OnInitListener {
         onSpeechFinished = null
     }
     
+    /**
+     * Stop speech only if it matches the specified priority
+     */
+    fun stopIfPriority(priority: Priority) {
+        if (isSpeaking && currentPriority == priority) {
+            Log.d("TtsHelper", "🛑 Stopping TTS with priority $priority")
+            stop()
+        }
+    }
+    
     fun shutdown() {
         tts?.stop()
         tts?.shutdown()
