@@ -20,6 +20,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import android.view.accessibility.AccessibilityManager
+import androidx.core.content.ContextCompat
 import androidx.navigation.NavHostController
 import com.example.mnn_llm_test.navigation.Screen
 import com.example.mnntest.ChatApplication
@@ -249,51 +255,124 @@ private fun ChatHistoryItem(
     onDeleteClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val title = thread.title ?: formatDate(thread.updatedAt)
     val dateCreated = formatDate(thread.createdAt)
     
     // Create TalkBack-friendly description
     val talkBackDescription = "Chat History Item Titled: $title, created at $dateCreated"
     
-    Card(
-        onClick = onItemClick,
-        modifier = modifier
-            .fillMaxWidth()
-            .semantics {
-                contentDescription = talkBackDescription
-            }
-    ) {
-        Row(
-            modifier = Modifier
+    // Detect TalkBack state
+    val accessibilityManager = remember { 
+        ContextCompat.getSystemService(context, AccessibilityManager::class.java) 
+    }
+    val isTalkBackEnabled = remember { mutableStateOf(false) }
+    
+    LaunchedEffect(Unit) {
+        // Check TalkBack state periodically
+        while (true) {
+            val isEnabled = accessibilityManager?.isTouchExplorationEnabled == true
+            isTalkBackEnabled.value = isEnabled
+            kotlinx.coroutines.delay(500) // Check every 500ms
+        }
+    }
+    
+    // Create fresh interaction source based on TalkBack state to avoid conflicts
+    val interactionSource = remember(isTalkBackEnabled.value) { MutableInteractionSource() }
+    val rippleIndication = androidx.compose.material.ripple.rememberRipple()
+    
+    // Apply different touch handling strategies based on TalkBack state
+    if (isTalkBackEnabled.value) {
+        // TalkBack is enabled - use semantic touch handling with no Card onClick
+        Card(
+            modifier = modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .clearAndSetSemantics {
+                    contentDescription = talkBackDescription
+                    onClick(label = null, action = { onItemClick(); true })
+                }
         ) {
-            Column(
-                modifier = Modifier.weight(1f)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Date created: $dateCreated",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Date created: $dateCreated",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                }
+                
+                IconButton(
+                    onClick = onDeleteClick
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete Chat",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
             }
-            
-            IconButton(
-                onClick = onDeleteClick
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete Chat",
-                    tint = MaterialTheme.colorScheme.error
+        }
+    } else {
+        // TalkBack is disabled - use normal Card with onClick
+        Card(
+            onClick = onItemClick,
+            modifier = modifier
+                .fillMaxWidth()
+                .semantics {
+                    contentDescription = talkBackDescription
+                }
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = rippleIndication,
+                    onClick = onItemClick
                 )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Date created: $dateCreated",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                }
+                
+                IconButton(
+                    onClick = onDeleteClick
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete Chat",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         }
     }
